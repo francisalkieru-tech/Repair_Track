@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "205516311125",
+    "project_id": "repair-tracker-app-e9ace",
+    "storage_bucket": "repair-tracker-app-e9ace.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:205516311125:android:afe024bd1ce485350be2dc",
+        "android_client_info": {
+          "package_name": "repair.tracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCR66fYHEVx5Fq1pH4ceIJT81kZ3ZsQZeg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
