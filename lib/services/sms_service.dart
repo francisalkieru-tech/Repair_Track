@@ -1,9 +1,24 @@
+// ignore_for_file: avoid_print
+// import 'package:http/http.dart' as http;
 
+/// Semaphore SMS wrapper para sa customer notifications.
+///
+/// Day 16 update: bawat status may sariling SCRIPTED message na (hindi na
+/// kailangan i-type ng admin lahat). Kung may extra note/remarks na in-type
+/// ang admin, idadagdag lang ito sa likod ng scripted message.
+///
+/// Print-simulate muna 'to habang wala pang totoong Semaphore API key.
+/// Kapag meron ka na:
+///   1. Ilagay ang key sa _apiKey sa baba
+///   2. I-uncomment ang import ng http sa taas
+///   3. I-uncomment ang http.post block sa loob ng sendStatusUpdateSms
 class SmsService {
   // TODO: Palitan ng actual Semaphore API key mo kapag meron ka na.
   static const String _apiKey = 'YOUR_SEMAPHORE_API_KEY';
   static const String _senderName = 'REPAIRAPP';
 
+  /// Magpapadala ng SMS sa customer tuwing nag-update ang admin ng status
+  /// ng kanyang repair request.
   Future<void> sendStatusUpdateSms({
     required String contactNumber,
     required String trackingId,
@@ -22,14 +37,14 @@ class SmsService {
       scheduledDate: scheduledDate,
     );
 
-    //TEMPORARY: print muna sa terminal para sa testing
+    // ── TEMPORARY: print muna sa terminal para sa testing ──
     print('=============================');
     print('[SMS SIMULATED] Status Update Notification');
     print('TO: $contactNumber');
     print('MESSAGE: $message');
     print('=============================');
 
-    //uncomment kapag may actual Semaphore API key na
+    // ── I-uncomment kapag may actual Semaphore API key na ──
     // final response = await http.post(
     //   Uri.parse('https://api.semaphore.co/api/v4/messages'),
     //   body: {
@@ -44,6 +59,9 @@ class SmsService {
     // }
   }
 
+  /// Bawat status may scripted/template message. Kung may note na
+  /// in-type ang admin (optional sa karamihan, required sa In Process at
+  /// Waiting for Parts), idadagdag ito sa likod ng template.
   String _buildMessage({
     required String trackingId,
     required String applianceType,

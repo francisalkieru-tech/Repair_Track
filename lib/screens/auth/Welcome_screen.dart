@@ -136,7 +136,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             // Admin Login
                             _OptionButton(
                               icon: Icons.shield,
-                              iconColor: const Color(0xFF6366F1),
+                              iconColor: const Color.fromARGB(255, 0, 4, 254),
                               iconBgColor: const Color(0xFFE0E7FF),
                               title: 'Admin',
                               subtitle: 'Admin access only',

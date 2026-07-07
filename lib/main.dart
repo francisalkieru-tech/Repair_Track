@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:app_links/app_links.dart';
 import 'firebase_options.dart';
 import 'screens/auth/Welcome_screen.dart';
 import 'screens/tracking/tracking_screen.dart';
+import 'screens/tracking/service_history_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,26 +47,58 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  void _handleLink(Uri uri) {
-    // Format: repairtrack://track/TRACKINGID
-    // o https://repairtrack.app/track/TRACKINGID
-    final segments = uri.pathSegments;
-    if (segments.length >= 2 && segments[0] == 'track') {
-      final trackingId = segments[1].toUpperCase();
-      _navigatorKey.currentState?.push(
-        MaterialPageRoute(
-          builder: (_) => TrackingScreen(trackingId: trackingId),
-        ),
-      );
-    } else if (uri.host == 'track' && uri.scheme == 'repairtrack') {
-      // repairtrack://track/TRACKINGID
-      final trackingId = uri.path.replaceAll('/', '').toUpperCase();
-      _navigatorKey.currentState?.push(
-        MaterialPageRoute(
-          builder: (_) => TrackingScreen(trackingId: trackingId),
-        ),
-      );
+  Future<void> _handleLink(Uri uri) async {
+    String? trackingId;
+
+    // Format A: repairtrack://track/TRACKINGID
+    if (uri.scheme == 'repairtrack' && uri.host == 'track') {
+      trackingId = uri.path.replaceAll('/', '').toUpperCase();
     }
+    // Format B: https://repairtrack.app/track/TRACKINGID
+    else {
+      final segments = uri.pathSegments;
+      if (segments.length >= 2 && segments[0] == 'track') {
+        trackingId = segments[1].toUpperCase();
+      }
+    }
+
+    if (trackingId == null || trackingId.isEmpty) return;
+
+    // I-check muna sa Firestore kung Completed na ang record — kapag
+    // Completed, ipapakita sa ServiceHistoryScreen (mas detalyado);
+    // kapag hindi pa, ipapakita sa TrackingScreen (ongoing progress).
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('repairRequests')
+          .where('trackingId', isEqualTo: trackingId)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        // Hindi nahanap — ipakita na lang sa TrackingScreen
+        // (magpapakita ng "not found" message doon)
+        _pushScreen(TrackingScreen(trackingId: trackingId));
+        return;
+      }
+
+      final data = snapshot.docs.first.data();
+      final status = data['status'] as String? ?? '';
+
+      if (status == 'Completed') {
+        _pushScreen(ServiceHistoryScreen(trackingId: trackingId));
+      } else {
+        _pushScreen(TrackingScreen(trackingId: trackingId));
+      }
+    } catch (_) {
+      // Kung may error sa Firestore lookup, fallback sa TrackingScreen
+      _pushScreen(TrackingScreen(trackingId: trackingId));
+    }
+  }
+
+  void _pushScreen(Widget screen) {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => screen),
+    );
   }
 
   @override

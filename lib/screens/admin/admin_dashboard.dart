@@ -1,8 +1,14 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../utils/qr_downloader.dart';
 import '../../services/firestore_service.dart';
 import '../../services/sms_service.dart';
 import '../../services/storage_service.dart';
@@ -46,7 +52,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                 final allDocs = snapshot.data?.docs ?? [];
 
-                // Filter client-side based on selected status chip
+                // Client-side filtering (consistent sa existing pattern ng app)
                 final docs = _selectedFilter == 'All'
                     ? allDocs
                     : allDocs.where((doc) {
@@ -57,7 +63,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 if (docs.isEmpty) {
                   return Center(
                     child: Text(
-                      'No repair requests${_selectedFilter == 'All' ? '' : ' for "$_selectedFilter"'}.',
+                      'Walang repair requests${_selectedFilter == 'All' ? '' : ' sa "$_selectedFilter"'}.',
                       style: const TextStyle(color: Color(0xFF6B7280)),
                     ),
                   );
@@ -81,10 +87,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildFilterChips() {
-    // 'Declined' is added here in the filter chips but NOT in
-    // AppConstants.allStatuses because it shouldn't appear as an option
-    // in the status dropdown of the update sheet. It can only be set
-    // through the Decline button in the Review sheet.
+    // 'Declined' idinagdag lang dito sa filter (hindi sa
+    // AppConstants.allStatuses) dahil hindi 'to dapat lumabas bilang
+    // option sa status dropdown ng generic update sheet — makukuha lang
+    // ito via ang Decline button sa Review sheet.
     final filters = ['All', ...AppConstants.allStatuses, 'Declined'];
 
     return Container(
@@ -195,24 +201,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ],
               const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      'Update',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2563EB),
+              Row(
+                mainAxisAlignment: status == 'Completed'
+                    ? MainAxisAlignment.spaceBetween
+                    : MainAxisAlignment.end,
+                children: [
+                  if (status == 'Completed')
+                    TextButton.icon(
+                      onPressed: () => _showQrDialog(trackingId, name),
+                      icon: const Icon(Icons.qr_code_2, size: 16),
+                      label: const Text('View QR'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF166534),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                       ),
                     ),
-                    SizedBox(width: 4),
-                    Icon(Icons.chevron_right,
-                        size: 18, color: Color(0xFF2563EB)),
-                  ],
-                ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Text(
+                        'I-update',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Icon(Icons.chevron_right,
+                          size: 18, color: Color(0xFF2563EB)),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -221,9 +241,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // If the request is still Pending, open the Review sheet first (Accept/Decline)
-  // before letting the admin update the status directly.
-  // Any other status goes straight to the normal update sheet.
+  /// Pending pa ang request → kailangan munang i-REVIEW (Accept/Decline)
+  /// bago payagan ang admin na tumalon diretso sa status update flow.
+  /// Anuman pang status → tuloy na sa normal update sheet.
   void _handleCardTap(String docId, Map<String, dynamic> data) {
     final status = data['status'] ?? 'Pending';
     if (status == 'Pending') {
@@ -231,6 +251,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } else {
       _openUpdateSheet(docId, data);
     }
+  }
+
+  void _showQrDialog(String trackingId, String customerName) {
+    showDialog(
+      context: context,
+      builder: (context) => _QrCodeDialog(
+        trackingId: trackingId,
+        customerName: customerName,
+      ),
+    );
   }
 
   void _openReviewSheet(String docId, Map<String, dynamic> data) {
@@ -290,9 +320,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
-// Each status has a matching (background, text) color pair.
-// Same colors used in tracking_screen.dart and home_screen.dart
-// so the UI stays consistent throughout the app.
+/// Bawat status may katumbas na (background, text) color pair —
+/// pareho ito ng ginamit sa tracking_screen.dart at home_screen.dart
+/// para consistent ang tingin sa buong app.
 (Color, Color) _statusColors(String status) {
   switch (status) {
     case 'Pending':
@@ -315,6 +345,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
+/// Bottom sheet para sa pag-update ng status ng isang repair request.
+///
+/// Day 16 update: hindi na lahat ng status pareho ang required fields —
+///   - In Process / Waiting for Parts → REQUIRED ang note (parts source
+///     lumalabas din dito dahil dito lang ito relevant)
+///   - In Home → REQUIRED ang schedule (date + time ng technician visit)
+///   - Iba pang status → may scripted/template message na, note ay
+///     OPTIONAL na lang (extra remarks sa ibabaw ng template)
+/// Technician assignment ay laging optional, available sa anumang status.
 class _UpdateStatusSheet extends StatefulWidget {
   final String docId;
   final String currentStatus;
@@ -351,7 +390,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   Uint8List? _selectedImage;
   bool _isSubmitting = false;
 
-  // For these statuses, the admin must provide a note before submitting.
+  // Sa mga status na ito, REQUIRED ang note (at relevant ang parts source).
   static const _statusesNeedingNote = {'In Process', 'Waiting for Parts'};
 
   bool get _noteRequired => _statusesNeedingNote.contains(_selectedStatus);
@@ -382,8 +421,6 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     );
     if (date == null) return;
 
-    if (!mounted) return;
-
     final time = await showTimePicker(
       context: context,
       initialTime: _scheduledDateTime != null
@@ -412,11 +449,12 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   Future<void> _pickPhoto() async {
     ImageSource source = ImageSource.gallery;
 
-    // On Web, go straight to gallery — if we await another dialog before
-    // calling pickImage(), it breaks the user-gesture chain the browser
-    // needs to open the file picker. It fails silently (no error thrown).
-    // On mobile (Android/iOS) it's fine to show the Camera/Gallery choice
-    // because the plugin handles it differently there.
+    // Sa Web, diretso lang sa gallery — kung dadaan pa muna sa ibang
+    // dialog/await bago tawagin ang pickImage, "nababasag" ang
+    // user-gesture chain na kailangan ng browser para buksan ang file
+    // dialog, kaya nabi-block 'to nang tahimik (walang error).
+    // Sa mobile (Android/iOS), okay lang dumaan sa choice ng Camera
+    // o Gallery dahil iba ang plugin implementation dun.
     if (!kIsWeb) {
       final chosen = await showModalBottomSheet<ImageSource>(
         context: context,
@@ -426,19 +464,18 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
             children: [
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined),
-                title: const Text('Take a Photo'),
+                title: const Text('Kuhanan ng Camera'),
                 onTap: () => Navigator.pop(context, ImageSource.camera),
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Choose from Gallery'),
+                title: const Text('Piliin mula sa Gallery'),
                 onTap: () => Navigator.pop(context, ImageSource.gallery),
               ),
             ],
           ),
         ),
       );
-
       if (chosen == null) return;
       source = chosen;
     }
@@ -458,11 +495,11 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('New Technician'),
+        title: const Text('Bagong Technician'),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Technician name'),
+          decoration: const InputDecoration(hintText: 'Pangalan ng technician'),
         ),
         actions: [
           TextButton(
@@ -471,7 +508,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Add'),
+            child: const Text('Idagdag'),
           ),
         ],
       ),
@@ -482,7 +519,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     if (_scheduleRequired && _scheduledDateTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a date and time for the technician visit.'),
+          content: Text('Pumili ng date at oras ng pagpunta ng technician.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -492,7 +529,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     if (_partsSourceRelevant && _partsSource == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a parts source.'),
+          content: Text('Piliin muna ang parts source.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -502,7 +539,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     if (_noteRequired && _noteController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please add a note or remarks for this update.'),
+          content: Text('Maglagay ng note/remarks para sa update na ito.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -512,7 +549,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     setState(() => _isSubmitting = true);
 
     try {
-      // Step 0: Upload the photo first (if one was selected) to Supabase Storage
+      // 0. I-upload muna ang photo (kung may pinili) sa Supabase Storage
       String? photoUrl;
       if (_selectedImage != null) {
         photoUrl = await _storageService.uploadPhoto(
@@ -521,9 +558,10 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         );
       }
 
-      // Step 1: Update Firestore — new status + history entry
+      // 1. I-update sa Firestore: status + history entry
       await _firestoreService.updateRepairStatus(
         docId: widget.docId,
+        trackingId: widget.trackingId,
         newStatus: _selectedStatus,
         note: _noteController.text,
         partsSource: _partsSourceRelevant ? _partsSource : null,
@@ -532,8 +570,8 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         photoUrl: photoUrl,
       );
 
-      // Step 2: Send SMS notification to the customer using a template
-      // message based on the new status, plus the optional note on top.
+      // 2. I-trigger ang SMS notification sa customer (may template na
+      //    base sa status, plus optional note sa taas nito)
       await _smsService.sendStatusUpdateSms(
         contactNumber: widget.contactNumber,
         trackingId: widget.trackingId,
@@ -548,7 +586,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Status updated and customer has been notified.'),
+            content: Text('Na-update ang status at na-notify ang customer.'),
             backgroundColor: Color(0xFF166534),
           ),
         );
@@ -574,8 +612,8 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
             .map((doc) => (doc.data() as Map<String, dynamic>)['name'] as String)
             .toList();
 
-        // If there's already an assigned technician who's not in the list yet
-        // (e.g. first time loading), add them so they don't disappear from the dropdown.
+        // Kung may existing technician na naka-assign na pero wala pa sa
+        // listahan (hal. unang pagkakataon), isama natin para hindi mawala.
         if (_selectedTechnician != null &&
             !technicians.contains(_selectedTechnician)) {
           technicians.add(_selectedTechnician!);
@@ -583,7 +621,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
 
         return DropdownButtonFormField<String>(
           initialValue: _selectedTechnician,
-          hint: const Text('No technician assigned yet'),
+          hint: const Text('Walang naka-assign pa'),
           items: [
             ...technicians.map(
               (name) => DropdownMenuItem(value: name, child: Text(name)),
@@ -594,7 +632,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                 children: [
                   Icon(Icons.add, size: 16, color: Color(0xFF2563EB)),
                   SizedBox(width: 6),
-                  Text('Add New Technician',
+                  Text('Magdagdag ng Bagong Technician',
                       style: TextStyle(color: Color(0xFF2563EB))),
                 ],
               ),
@@ -655,7 +693,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                 ),
               ),
               Text(
-                'Update Status — ${widget.trackingId}',
+                'I-update ang Status — ${widget.trackingId}',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -665,7 +703,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
               const SizedBox(height: 20),
 
               // Status dropdown
-              const Text('New Status',
+              const Text('Bagong Status',
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -692,9 +730,9 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
               ),
               const SizedBox(height: 16),
 
-              // Schedule field — only shows when status is "In Home"
+              // Schedule — lumalabas lang pag "In Home"
               if (_scheduleRequired) ...[
-                const Text('Technician Visit Schedule',
+                const Text('Schedule ng Pagpunta ng Technician',
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -720,7 +758,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                         Text(
                           _scheduledDateTime != null
                               ? _formatSchedule(_scheduledDateTime!)
-                              : 'Select date and time',
+                              : 'Pumili ng date at oras',
                           style: TextStyle(
                             fontSize: 13,
                             color: _scheduledDateTime != null
@@ -735,7 +773,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                 const SizedBox(height: 16),
               ],
 
-              // Parts source — only shows for "In Process" or "Waiting for Parts"
+              // Parts source — lumalabas lang pag In Process o Waiting for Parts
               if (_partsSourceRelevant) ...[
                 const Text('Parts Source',
                     style: TextStyle(
@@ -795,7 +833,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                 const SizedBox(height: 16),
               ],
 
-              // Assigned technician — always optional, available on any status
+              // Assigned technician — laging available, optional
               const Text('Assigned Technician',
                   style: TextStyle(
                       fontSize: 13,
@@ -805,11 +843,11 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
               _buildTechnicianField(),
               const SizedBox(height: 16),
 
-              // Notes / remarks field
+              // Notes/remarks
               Text(
                 _noteRequired
                     ? 'Notes / Remarks (required)'
-                    : 'Notes / Remarks (optional — template message will be used)',
+                    : 'Notes / Remarks (optional — may template na message)',
                 style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -821,8 +859,8 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: _noteRequired
-                      ? 'e.g. Checked the compressor, needs a new fan motor...'
-                      : 'Optional — extra details to add on top of the template message',
+                      ? 'Hal: Na-check na ang compressor, kailangan ng bagong fan motor...'
+                      : 'Optional — extra na detalye na idadagdag sa template message',
                   filled: true,
                   fillColor: const Color(0xFFF9FAFB),
                   contentPadding: const EdgeInsets.all(12),
@@ -834,7 +872,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
               ),
               const SizedBox(height: 20),
 
-              // Photo upload — optional, available on any status
+              // Photo upload — optional, per status
               const Text('Appliance Photo (optional)',
                   style: TextStyle(
                       fontSize: 13,
@@ -889,7 +927,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                             color: Color(0xFF9CA3AF), size: 24),
                         SizedBox(height: 6),
                         Text(
-                          'Tap to add a photo',
+                          'I-tap para magdagdag ng photo',
                           style: TextStyle(
                               fontSize: 12, color: Color(0xFF9CA3AF)),
                         ),
@@ -920,7 +958,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                             strokeWidth: 2,
                           ),
                         )
-                      : const Text('Update and Notify Customer'),
+                      : const Text('I-update at Notify Customer'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -931,12 +969,12 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     );
   }
 }
-
-// Review sheet for NEW (Pending) requests — shows all the details of the
-// request (appliance info, contact, photo if any) before letting the admin
-// Accept or Decline it. On Accept, status becomes "Accepted" and the admin
-// can continue updating from there. On Decline, a reason is required —
-// status becomes "Declined" which is terminal (no further updates, like Completed).
+/// Review sheet para sa mga BAGONG (Pending) request — ipapakita muna
+/// dito ang buong detalye ng request (sira, contact, photo kung meron)
+/// bago payagan ang admin na mag-Accept o Decline. Sa Accept, magiging
+/// "Accepted" ang status at tuloy na sa normal update flow paglipas
+/// nito. Sa Decline, kailangan ng reason — magiging "Declined" ang
+/// status, terminal na 'yon (parang Completed, hindi na uu-update pa).
 class _ReviewRequestSheet extends StatefulWidget {
   final String docId;
   final String trackingId;
@@ -975,12 +1013,12 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
   }
 
   Future<void> _decide(String newStatus) async {
-    // Reason/remarks is required when Declining — so the customer
-    // knows why their request was rejected. Optional when Accepting.
+    // Required ang reason/remarks kapag Decline — para malinaw sa
+    // customer kung bakit. Optional lang kapag Accept.
     if (newStatus == 'Declined' && _noteController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a reason for declining this request.'),
+          content: Text('Maglagay ng reason kung bakit dini-decline.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -992,6 +1030,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
     try {
       await _firestoreService.updateRepairStatus(
         docId: widget.docId,
+        trackingId: widget.trackingId,
         newStatus: newStatus,
         note: _noteController.text,
       );
@@ -1010,8 +1049,8 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
           SnackBar(
             content: Text(
               newStatus == 'Accepted'
-                  ? 'Request accepted and customer has been notified.'
-                  : 'Request declined and customer has been notified.',
+                  ? 'Na-accept ang request at na-notify ang customer.'
+                  : 'Na-decline ang request at na-notify ang customer.',
             ),
             backgroundColor: newStatus == 'Accepted'
                 ? const Color(0xFF166534)
@@ -1101,7 +1140,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text(
-                      'Pending — Needs Review',
+                      'Pending — Need Review',
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -1112,7 +1151,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Review Request — ${widget.trackingId}',
+                'I-review ang Request — ${widget.trackingId}',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -1121,7 +1160,6 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
               ),
               const SizedBox(height: 16),
 
-              // Show photo if one was uploaded by the customer
               if (hasPhoto) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
@@ -1143,7 +1181,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
                       height: 100,
                       alignment: Alignment.center,
                       color: const Color(0xFFF3F4F6),
-                      child: const Text('Could not load photo'),
+                      child: const Text('Hindi ma-load ang photo'),
                     ),
                   ),
                 ),
@@ -1173,7 +1211,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText:
-                      'Optional when Accepting • Required when Declining (reason)',
+                      'Optional kapag Accept • Required kapag Decline (reason)',
                   filled: true,
                   fillColor: const Color(0xFFF9FAFB),
                   contentPadding: const EdgeInsets.all(12),
@@ -1232,6 +1270,215 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
               const SizedBox(height: 8),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dialog para sa pag-view at pag-download ng QR code ng isang
+/// COMPLETED repair request — para sa shop's record/printout.
+///
+/// Ang QR ay naka-encode sa parehong deep link scheme na ginagamit na
+/// ng buong app (repairtrack://track/TRACKINGID), kaya kung may
+/// device na naka-install ng RepairTrack at nag-scan dito, diretso
+/// itong magbubukas sa Tracking Screen ng record na 'yon.
+class _QrCodeDialog extends StatefulWidget {
+  final String trackingId;
+  final String customerName;
+
+  const _QrCodeDialog({
+    required this.trackingId,
+    required this.customerName,
+  });
+
+  @override
+  State<_QrCodeDialog> createState() => _QrCodeDialogState();
+}
+
+class _QrCodeDialogState extends State<_QrCodeDialog> {
+  final GlobalKey _qrBoundaryKey = GlobalKey();
+  bool _isSaving = false;
+
+  String get _qrData => 'repairtrack://track/${widget.trackingId}';
+
+  Future<void> _downloadQr() async {
+    setState(() => _isSaving = true);
+    try {
+      // I-capture ang QR widget (sa loob ng RepaintBoundary) bilang
+      // isang PNG image sa memory.
+      final boundary = _qrBoundaryKey.currentContext!.findRenderObject()
+          as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        throw Exception('Hindi ma-convert ang QR image sa PNG.');
+      }
+      final bytes = byteData.buffer.asUint8List();
+      final fileName = 'QR_${widget.trackingId}.png';
+
+      if (kIsWeb) {
+        // Sa Web: totoong browser file download (diretso sa Downloads
+        // folder), hindi ang OS Share dialog.
+        downloadBytesAsFile(bytes, fileName);
+      } else {
+        // Sa mobile: share_plus — lalabas ang native share sheet na
+        // may "Save to Files/Gallery" option, mas akma sa mobile UX.
+        await Share.shareXFiles(
+          [XFile.fromData(bytes, name: fileName, mimeType: 'image/png')],
+          text: 'RepairTrack QR Code — ${widget.trackingId}',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to download QR: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle,
+                color: Color(0xFF166534), size: 32),
+            const SizedBox(height: 8),
+            Text(
+              widget.customerName,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Color(0xFF111827),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              widget.trackingId,
+              style: const TextStyle(
+                fontSize: 12,
+                letterSpacing: 1,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+            const SizedBox(height: 16),
+            RepaintBoundary(
+              key: _qrBoundaryKey,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.white,
+                child: QrImageView(
+                  data: _qrData,
+                  version: QrVersions.auto,
+                  size: 200,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Scan to view the full service record',
+              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+
+            // Plain-text version ng laman ng QR — para makita/ma-verify
+            // ang actual data nito kahit walang scanner sa kamay.
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _qrData,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: Color(0xFF374151),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 16),
+                    color: const Color(0xFF6B7280),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Copy',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _qrData));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('QR data copied to clipboard.'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isSaving ? null : _downloadQr,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.download, size: 18),
+                    label: const Text('Download'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

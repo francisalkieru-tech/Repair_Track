@@ -108,15 +108,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   final data = doc.data() as Map<String, dynamic>;
                   final status = data['status'];
 
-                  // Not yet Completed/Declined → always included in
-                  // Active Repairs.
+                  // Pending pa (di pa na-review/na-accept ng admin) →
+                  // hindi pa lumalabas sa Active Repairs. Lalabas lang
+                  // 'to pagkatapos i-Accept (status na "Accepted" or
+                  // anumang sumunod dito).
+                  if (status == 'Pending') return false;
+
+                  // Hindi pa Completed/Declined → kasama sa Active Repairs.
                   if (status != 'Completed' && status != 'Declined') {
                     return true;
                   }
 
-                  // Completed or Declined already — but keep it here
-                  // for 24 hours since it was updated (updatedAt),
-                  // before it permanently moves out of Active Repairs.
+                  // Completed o Declined na — pero panatilihin pa rin
+                  // dito for 24 hours mula noong na-update (updatedAt),
+                  // bago ito lumipat permanently palabas ng Active Repairs.
                   final updatedAt = data['updatedAt'] as Timestamp?;
                   if (updatedAt == null) return false;
 

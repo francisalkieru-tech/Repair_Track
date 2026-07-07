@@ -9,7 +9,7 @@ class AuthService {
 
   User? get currentUser => _auth.currentUser;
 
-  // ── REGISTER - Customer ──
+  //REGISTER - Customer
   Future<String?> registerCustomer({
     required String email,
     required String password,
