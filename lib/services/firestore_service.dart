@@ -1,13 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Centralized Firestore access para sa repairRequests collection
-/// (at ngayon, technicians collection din).
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  /// Stream ng LAHAT ng repair requests, naka-order by newest first.
-  /// Client-side na lang ang status filtering (sa admin_dashboard.dart)
-  /// para iwas composite index issues.
   Stream<QuerySnapshot> streamRepairRequests() {
     return _db
         .collection('repairRequests')
@@ -15,16 +10,6 @@ class FirestoreService {
         .snapshots();
   }
 
-  /// I-update ang status ng isang repair request + i-log sa statusHistory.
-  ///
-  /// Day 16 update: optional na ang partsSource (relevant lang sa
-  /// In Process / Waiting for Parts), pati assignedTechnician at
-  /// scheduledDate (relevant lang sa In Home) — kaya nullable lahat,
-  /// at lalagay lang sa Firestore kung may value.
-  ///
-  /// Mahalaga: ginagamit dito ang Timestamp.now() (hindi serverTimestamp())
-  /// dahil hindi pwede gumamit ng FieldValue.serverTimestamp() sa loob ng
-  /// isang array na ipinasa via arrayUnion.
   Future<void> updateRepairStatus({
     required String docId,
     required String trackingId,
@@ -34,6 +19,8 @@ class FirestoreService {
     String? assignedTechnician,
     DateTime? scheduledDate,
     String? photoUrl,
+    int? warrantyMonths,
+    String? warrantyTerms,
   }) async {
     final historyEntry = <String, dynamic>{
       'status': newStatus,
@@ -65,22 +52,27 @@ class FirestoreService {
       updateData['scheduledVisit'] = Timestamp.fromDate(scheduledDate);
     }
 
-    // Day 17-18: kapag naging "Completed" ang status, i-link/i-record
-    // natin ang QR code data sa mismong document — para may permanenteng
-    // record kung kailan na-generate ang QR para sa service record na
-    // ito (ang actual QR image ay client-side na lang ginagawa mula sa
-    // trackingId, pero ang link/reference ay nakatala na rin sa Firestore).
     if (newStatus == 'Completed') {
       updateData['qrData'] = 'repairtrack://track/$trackingId';
       updateData['qrGeneratedAt'] = FieldValue.serverTimestamp();
+
+      if (warrantyMonths != null && warrantyMonths > 0) {
+        final now = DateTime.now();
+        final expiresAt = DateTime(
+          now.year,
+          now.month + warrantyMonths,
+          now.day,
+        );
+        updateData['warrantyMonths'] = warrantyMonths;
+        updateData['warrantyTerms'] = (warrantyTerms ?? '').trim();
+        updateData['warrantyStartAt'] = Timestamp.now();
+        updateData['warrantyExpiresAt'] = Timestamp.fromDate(expiresAt);
+      }
     }
 
     await _db.collection('repairRequests').doc(docId).update(updateData);
   }
 
-  // ── Technicians ──────────────────────────────────────────────
-  // Simpleng collection lang ng technician names na nadadagdagan ng
-  // admin habang gumagamit (via "Add New Technician" sa dropdown).
 
   Stream<QuerySnapshot> streamTechnicians() {
     return _db.collection('technicians').orderBy('name').snapshots();

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// "Repair Tracking Detail" — shows one repair request's full status
+/// timeline, technician notes per step, and submitted photo. Reached
+/// from a tap on any request row (My Repair list or Repair History).
 class TrackingScreen extends StatelessWidget {
   final String trackingId;
   const TrackingScreen({super.key, required this.trackingId});
@@ -11,10 +14,9 @@ class TrackingScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFF8FAFF),
       appBar: AppBar(
         title: const Text('Track Repair'),
-        backgroundColor: const Color(0xFF2563EB),
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 0,
-        automaticallyImplyLeading: false,
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -39,6 +41,7 @@ class TrackingScreen extends StatelessWidget {
     );
   }
 
+  // Empty state shown when no request matches this tracking ID.
   Widget _buildNotFound() {
     return Center(
       child: Padding(
@@ -53,7 +56,7 @@ class TrackingScreen extends StatelessWidget {
               style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827)),
+                  color: Colors.black),
             ),
             const SizedBox(height: 8),
             Text(
@@ -77,30 +80,34 @@ class TrackingScreen extends StatelessWidget {
       'In Shop',
       'In Process',
       'Waiting for Parts',
-      'Completed',
+      'Complete',
     ];
-    final currentIndex = allStatuses.indexOf(status);
+    // Firestore stores the final status as 'Completed'; the timeline
+    // label uses 'Complete' to match the mockup, so map it here.
+    final normalizedStatus = status == 'Completed' ? 'Complete' : status;
+    final currentIndex = allStatuses.indexOf(normalizedStatus);
+
+    // Per-step notes/dates keyed by status label, pulled from statusHistory.
+    final stepInfo = _buildStepInfo(data);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Tracking ID header
+          // Tracking ID header card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF2563EB), Color(0xFF6366F1)],
-              ),
+              color: const Color(0xFF9CA3AF),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Tracking ID',
+                  'Tracking ID:',
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
@@ -108,72 +115,65 @@ class TrackingScreen extends StatelessWidget {
                   trackingId,
                   style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 24,
+                      fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 3),
+                      letterSpacing: 2),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _buildStatusBadge(status),
-                  ],
-                ),
+                _buildStatusBadge(normalizedStatus),
               ],
             ),
           ),
           const SizedBox(height: 20),
 
-          // Repair Info Card
+          // Repair details card (name, contact, address, appliance, problem, photo)
           _buildInfoCard(data),
           const SizedBox(height: 20),
 
-          // Status Timeline
           const Text(
-            'Repair Progress',
+            'Repair Status:',
             style: TextStyle(
-                fontSize: 16,
+                fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF111827)),
+                color: Colors.black),
           ),
           const SizedBox(height: 12),
 
+          // Vertical timeline: one row per status, each with an optional note.
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              border: Border.all(color: const Color(0xFFE5E7EB), width: 1.2),
             ),
             child: Column(
               children: List.generate(allStatuses.length, (index) {
                 final isCompleted = index <= currentIndex;
                 final isCurrent = index == currentIndex;
                 final isLast = index == allStatuses.length - 1;
+                final info = stepInfo[allStatuses[index]];
 
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Timeline indicator
+                    // Step indicator: check circle if reached, number if not.
                     Column(
                       children: [
                         Container(
-                          width: 28,
-                          height: 28,
+                          width: 26,
+                          height: 26,
                           decoration: BoxDecoration(
                             color: isCompleted
                                 ? const Color(0xFF2563EB)
-                                : const Color(0xFFE5E7EB),
+                                : Colors.white,
                             shape: BoxShape.circle,
-                            border: isCurrent
-                                ? Border.all(
-                                    color: const Color(0xFF2563EB), width: 3)
-                                : null,
+                            border: Border.all(
+                              color: isCompleted
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFFD1D5DB),
+                              width: 1.5,
+                            ),
                           ),
                           child: Center(
                             child: isCompleted
@@ -191,8 +191,8 @@ class TrackingScreen extends StatelessWidget {
                         if (!isLast)
                           Container(
                             width: 2,
-                            height: 36,
-                            color: isCompleted && index < currentIndex
+                            height: 40,
+                            color: index < currentIndex
                                 ? const Color(0xFF2563EB)
                                 : const Color(0xFFE5E7EB),
                           ),
@@ -200,32 +200,53 @@ class TrackingScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 16),
 
-                    // Status label
+                    // Step label + date/note + "Current status" tag
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 4, bottom: 36),
-                        child: Column(
+                        padding: const EdgeInsets.only(bottom: 32),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              allStatuses[index],
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: isCurrent
-                                    ? FontWeight.bold
-                                    : FontWeight.w500,
-                                color: isCompleted
-                                    ? const Color(0xFF111827)
-                                    : const Color(0xFF9CA3AF),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    allStatuses[index],
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: isCurrent
+                                          ? FontWeight.bold
+                                          : FontWeight.w500,
+                                      color: isCompleted
+                                          ? Colors.black
+                                          : const Color(0xFF9CA3AF),
+                                    ),
+                                  ),
+                                  if (info?.date != null)
+                                    Text(
+                                      info!.date!,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF9CA3AF)),
+                                    ),
+                                  if (isCurrent)
+                                    const Text(
+                                      'Current status',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF2563EB)),
+                                    ),
+                                ],
                               ),
                             ),
-                            if (isCurrent)
-                              const Text(
-                                'Current status',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF2563EB)),
-                              ),
+                            // Right-aligned note label for this step
+                            Text(
+                              info?.note ?? 'Note:',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Color(0xFF9CA3AF)),
+                            ),
                           ],
                         ),
                       ),
@@ -235,17 +256,33 @@ class TrackingScreen extends StatelessWidget {
               }),
             ),
           ),
-          const SizedBox(height: 20),
-
-          // Notes from admin (latest entry sa statusHistory, kung meron)
-          if (data['statusHistory'] != null &&
-              (data['statusHistory'] as List).isNotEmpty)
-            _buildNotesCard(
-              (data['statusHistory'] as List).last as Map<String, dynamic>,
-            ),
         ],
       ),
     );
+  }
+
+  // Builds a lookup of status -> {date, note} from the request's
+  // statusHistory entries, so each timeline row can show its own note.
+  Map<String, _StepInfo> _buildStepInfo(Map<String, dynamic> data) {
+    final result = <String, _StepInfo>{};
+    final history = data['statusHistory'] as List<dynamic>? ?? [];
+
+    for (final entry in history) {
+      final map = entry as Map<String, dynamic>;
+      final status = map['status'] as String? ?? '';
+      final label = status == 'Completed' ? 'Complete' : status;
+      final timestamp = map['timestamp'] as Timestamp?;
+      final note = map['note'] as String?;
+
+      result[label] = _StepInfo(
+        date: timestamp != null
+            ? '${timestamp.toDate().month}/${timestamp.toDate().day}/${timestamp.toDate().year.toString().substring(2)}'
+            : null,
+        note: (note != null && note.isNotEmpty) ? note : null,
+      );
+    }
+
+    return result;
   }
 
   Widget _buildInfoCard(Map<String, dynamic> data) {
@@ -255,23 +292,17 @@ class TrackingScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Repair Details',
+            'Repair Details:',
             style: TextStyle(
-                fontSize: 15,
+                fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF111827)),
+                color: Colors.black),
           ),
           const SizedBox(height: 12),
           const Divider(),
@@ -289,7 +320,7 @@ class TrackingScreen extends StatelessWidget {
               (data['initialPhotoUrl'] as String).isNotEmpty) ...[
             const SizedBox(height: 8),
             const Text(
-              'Submitted Photo',
+              'Submitted Photo:',
               style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -350,94 +381,9 @@ class TrackingScreen extends StatelessWidget {
               style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF111827)),
+                  color: Colors.black),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotesCard(Map<String, dynamic> latestEntry) {
-    final note = latestEntry['note'] as String? ?? '';
-    final partsSource = latestEntry['partsSource'] as String?;
-    final photoUrl = latestEntry['photoUrl'] as String?;
-    final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
-
-    if (note.isEmpty && !hasPhoto) return const SizedBox.shrink();
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFCD34D)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.note_outlined,
-                  color: Color(0xFFD97706), size: 18),
-              SizedBox(width: 8),
-              Text(
-                'Notes from Technician',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF92400E)),
-              ),
-            ],
-          ),
-          if (hasPhoto) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                photoUrl,
-                width: double.infinity,
-                height: 180,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    height: 180,
-                    alignment: Alignment.center,
-                    child: const CircularProgressIndicator(strokeWidth: 2),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 100,
-                  alignment: Alignment.center,
-                  color: const Color(0xFFFEF3C7),
-                  child: const Text(
-                    'Failed to load photo',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          if (note.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              note,
-              style: const TextStyle(
-                  fontSize: 13, color: Color(0xFF78350F)),
-            ),
-          ],
-          if (partsSource != null && partsSource.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Parts: $partsSource',
-              style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF92400E)),
-            ),
-          ],
         ],
       ),
     );
@@ -449,33 +395,33 @@ class TrackingScreen extends StatelessWidget {
 
     switch (status) {
       case 'Pending':
-        bgColor = const Color(0xFFFEF3C7);
-        textColor = const Color(0xFF92400E);
+        bgColor = Colors.white24;
+        textColor = Colors.white;
         break;
       case 'Accepted':
-        bgColor = const Color(0xFFDBEAFE);
-        textColor = const Color(0xFF1E40AF);
+        bgColor = const Color(0xFF16A34A);
+        textColor = Colors.white;
         break;
       case 'In Home':
       case 'In Shop':
-        bgColor = const Color(0xFFEDE9FE);
-        textColor = const Color(0xFF5B21B6);
+        bgColor = const Color(0xFF5B21B6);
+        textColor = Colors.white;
         break;
       case 'In Process':
-        bgColor = const Color(0xFFFCE7F3);
-        textColor = const Color(0xFF9D174D);
+        bgColor = const Color(0xFF9D174D);
+        textColor = Colors.white;
         break;
       case 'Waiting for Parts':
-        bgColor = const Color(0xFFFEE2E2);
-        textColor = const Color(0xFF991B1B);
+        bgColor = const Color(0xFF991B1B);
+        textColor = Colors.white;
         break;
-      case 'Completed':
-        bgColor = const Color(0xFFDCFCE7);
-        textColor = const Color(0xFF166534);
+      case 'Complete':
+        bgColor = const Color(0xFF16A34A);
+        textColor = Colors.white;
         break;
       default:
-        bgColor = const Color(0xFFF3F4F6);
-        textColor = const Color(0xFF374151);
+        bgColor = Colors.white24;
+        textColor = Colors.white;
     }
 
     return Container(
@@ -484,13 +430,34 @@ class TrackingScreen extends StatelessWidget {
         color: bgColor,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        status,
-        style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: textColor),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            status,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: textColor),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// Holds the date/note text shown for one step in the status timeline.
+class _StepInfo {
+  final String? date;
+  final String? note;
+  const _StepInfo({this.date, this.note});
 }

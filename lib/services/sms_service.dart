@@ -1,25 +1,9 @@
-// ignore_for_file: avoid_print
-// import 'package:http/http.dart' as http;
-
-/// Semaphore SMS wrapper para sa customer notifications.
-///
-/// Day 16 update: bawat status may sariling SCRIPTED message na (hindi na
-/// kailangan i-type ng admin lahat). Kung may extra note/remarks na in-type
-/// ang admin, idadagdag lang ito sa likod ng scripted message.
-///
-/// Print-simulate muna 'to habang wala pang totoong Semaphore API key.
-/// Kapag meron ka na:
-///   1. Ilagay ang key sa _apiKey sa baba
-///   2. I-uncomment ang import ng http sa taas
-///   3. I-uncomment ang http.post block sa loob ng sendStatusUpdateSms
 class SmsService {
-  // TODO: Palitan ng actual Semaphore API key mo kapag meron ka na.
   static const String _apiKey = 'YOUR_SEMAPHORE_API_KEY';
   static const String _senderName = 'REPAIRAPP';
 
-  /// Magpapadala ng SMS sa customer tuwing nag-update ang admin ng status
-  /// ng kanyang repair request.
   Future<void> sendStatusUpdateSms({
+    required String shopName, 
     required String contactNumber,
     required String trackingId,
     required String applianceType,
@@ -29,6 +13,7 @@ class SmsService {
     DateTime? scheduledDate,
   }) async {
     final message = _buildMessage(
+      shopName: shopName,
       trackingId: trackingId,
       applianceType: applianceType,
       newStatus: newStatus,
@@ -37,32 +22,14 @@ class SmsService {
       scheduledDate: scheduledDate,
     );
 
-    // ── TEMPORARY: print muna sa terminal para sa testing ──
-    print('=============================');
+    print('Alert Sms');
     print('[SMS SIMULATED] Status Update Notification');
     print('TO: $contactNumber');
     print('MESSAGE: $message');
-    print('=============================');
-
-    // ── I-uncomment kapag may actual Semaphore API key na ──
-    // final response = await http.post(
-    //   Uri.parse('https://api.semaphore.co/api/v4/messages'),
-    //   body: {
-    //     'apikey': _apiKey,
-    //     'number': contactNumber,
-    //     'message': message,
-    //     'sendername': _senderName,
-    //   },
-    // );
-    // if (response.statusCode != 200) {
-    //   throw Exception('Hindi na-send ang SMS: ${response.body}');
-    // }
   }
 
-  /// Bawat status may scripted/template message. Kung may note na
-  /// in-type ang admin (optional sa karamihan, required sa In Process at
-  /// Waiting for Parts), idadagdag ito sa likod ng template.
   String _buildMessage({
+    required String shopName, 
     required String trackingId,
     required String applianceType,
     required String newStatus,
@@ -76,7 +43,7 @@ class SmsService {
     switch (newStatus) {
       case 'Accepted':
         buffer.write(
-          'RepairTrack: Your repair request (ID: $trackingId) for your '
+          '$shopName: Your repair request (ID: $trackingId) for your '
           '$applianceType has been ACCEPTED.',
         );
         if (hasTechnician) {
@@ -85,7 +52,7 @@ class SmsService {
         break;
 
       case 'In Home':
-        buffer.write('RepairTrack: ');
+        buffer.write('$shopName: ');
         buffer.write(hasTechnician ? 'Technician $technician ' : 'A technician ');
         if (scheduledDate != null) {
           buffer.write(
@@ -99,7 +66,7 @@ class SmsService {
 
       case 'In Shop':
         buffer.write(
-          'RepairTrack: Your $applianceType (ID: $trackingId) has been '
+          '$shopName: Your $applianceType (ID: $trackingId) has been '
           'brought to our shop for repair.',
         );
         if (hasTechnician) {
@@ -110,36 +77,36 @@ class SmsService {
 
       case 'In Process':
         buffer.write(
-          'RepairTrack: Your $applianceType repair (ID: $trackingId) is '
+          '$shopName: Your $applianceType repair (ID: $trackingId) is '
           'now IN PROCESS.',
         );
         break;
 
       case 'Waiting for Parts':
         buffer.write(
-          'RepairTrack: Your $applianceType repair (ID: $trackingId) is '
+          '$shopName: Your $applianceType repair (ID: $trackingId) is '
           'currently waiting for parts.',
         );
         break;
 
       case 'Completed':
         buffer.write(
-          'RepairTrack: Great news! Your $applianceType repair '
+          '$shopName: Great news! Your $applianceType repair '
           '(ID: $trackingId) is now COMPLETE and ready for pickup. '
-          'Thank you for trusting RepairTrack!',
+          'Thank you for trusting $shopName!',
         );
         break;
 
       case 'Declined':
         buffer.write(
-          'RepairTrack: We\'re sorry, your repair request (ID: $trackingId) '
+          '$shopName: We\'re sorry, your repair request (ID: $trackingId) '
           'for your $applianceType has been DECLINED.',
         );
         break;
 
       default:
         buffer.write(
-          'RepairTrack: Your repair (ID: $trackingId) status is now '
+          '$shopName: Your repair (ID: $trackingId) status is now '
           '"$newStatus".',
         );
     }

@@ -1,22 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/auth_service.dart';
-import '../tracking/tracking_screen.dart';
 import 'repair_request_screen.dart';
 import 'repair_history_screen.dart';
-import 'profile_screen.dart';
 
+// Placeholder shop contact details — replace with the real
+// SMS number / Facebook page link when available.
+const String _kShopSmsNumber = '+639171234567';
+const String _kShopFacebookUrl = 'https://facebook.com/yourrepairshop';
+
+/// Home tab content (first tab of MainNavScreen).
+/// Kept separate from the bottom nav shell (see main_nav_screen.dart)
+/// so this widget is just the screen body, not the Scaffold + nav bar.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onGoToRepairTab;
+
+  const HomeScreen({
+    super.key,
+    this.onGoToRepairTab,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _showActiveRepairs = false;
-
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -24,293 +34,378 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFF),
-      appBar: AppBar(
-        title: const Text('RepairTrack'),
-        backgroundColor: const Color(0xFF2563EB),
-        foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ProfileScreen()),
-              ),
-              child: Container(
-                width: 36,
-                height: 36,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Greeting header card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(Icons.person,
-                    color: Colors.white, size: 22),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Greeting
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
-              ),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    backgroundColor: Color(0xFF2563EB),
-                    child: Icon(Icons.person, color: Colors.white),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Welcome back!',
-                          style: TextStyle(
-                              fontSize: 13, color: Color(0xFF6B7280))),
-                      Text(
-                        user?.email ?? 'Customer',
-                        style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF111827)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Active Repairs — Collapsible Section
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('repairRequests')
-                  .where('customerId', isEqualTo: uid)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const SizedBox.shrink();
-                }
-
-                final activeDocs = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final status = data['status'];
-
-                  // Pending pa (di pa na-review/na-accept ng admin) →
-                  // hindi pa lumalabas sa Active Repairs. Lalabas lang
-                  // 'to pagkatapos i-Accept (status na "Accepted" or
-                  // anumang sumunod dito).
-                  if (status == 'Pending') return false;
-
-                  // Hindi pa Completed/Declined → kasama sa Active Repairs.
-                  if (status != 'Completed' && status != 'Declined') {
-                    return true;
-                  }
-
-                  // Completed o Declined na — pero panatilihin pa rin
-                  // dito for 24 hours mula noong na-update (updatedAt),
-                  // bago ito lumipat permanently palabas ng Active Repairs.
-                  final updatedAt = data['updatedAt'] as Timestamp?;
-                  if (updatedAt == null) return false;
-
-                  final hoursSinceCompleted =
-                      DateTime.now().difference(updatedAt.toDate()).inHours;
-                  return hoursSinceCompleted < 24;
-                }).toList();
-
-                if (activeDocs.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    // Toggle header — clickable
-                    GestureDetector(
-                      onTap: () => setState(
-                          () => _showActiveRepairs = !_showActiveRepairs),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: const Color(0xFFBFDBFE)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(Icons.build_circle_outlined,
-                                  color: Color(0xFF2563EB), size: 22),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hi, "${user?.email ?? 'Customer Name here'}"',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Active Repairs (${activeDocs.length})',
-                                style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF111827)),
-                              ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Welcome to the RepairTrack',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white70,
                             ),
-                            Icon(
-                              _showActiveRepairs
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              color: const Color(0xFF6B7280),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.person_outline,
+                          color: Colors.black, size: 26),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
 
-                    // Expandable list
-                    if (_showActiveRepairs) ...[
-                      const SizedBox(height: 10),
-                      ...activeDocs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        return GestureDetector(
+              // "Your Repair Summary" stat row
+              const Text(
+                'Your Repair Summary:',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Live counts from Firestore, scoped to the logged-in customer.
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('repairRequests')
+                    .where('customerId', isEqualTo: uid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+
+                  int inProcess = 0;
+                  int complete = 0;
+
+                  for (final doc in docs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final status = data['status'];
+                    if (status == 'Completed') {
+                      complete++;
+                    } else if (status != 'Declined') {
+                      // Anything not yet Completed/Declined counts as "In Process".
+                      inProcess++;
+                    }
+                  }
+
+                  final total = docs.length;
+
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryStatCard(
+                          value: inProcess,
+                          label: 'In Process',
+                          onTap: widget.onGoToRepairTab,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _SummaryStatCard(
+                          value: complete,
+                          label: 'Complete',
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => TrackingScreen(
-                                trackingId: data['trackingId'],
-                              ),
-                            ),
+                                builder: (_) =>
+                                    const RepairHistoryScreen()),
                           ),
-                          child: Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: const Color(0xFFE5E7EB)),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.04),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEFF6FF),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(Icons.build,
-                                      color: Color(0xFF2563EB), size: 24),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        data['applianceType'] ?? '',
-                                        style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF111827)),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Row(
-                                        children: [
-                                          _buildStatusDot(data['status']),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            data['status'] ?? 'Pending',
-                                            style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Color(0xFF6B7280)),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(Icons.chevron_right,
-                                    color: Color(0xFF9CA3AF)),
-                              ],
-                            ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _SummaryStatCard(
+                          value: total,
+                          label: 'Total',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const RepairHistoryScreen()),
                           ),
-                        );
-                      }),
+                        ),
+                      ),
                     ],
-                    const SizedBox(height: 16),
-                  ],
-                );
-              },
-            ),
+                  );
+                },
+              ),
+              const SizedBox(height: 28),
 
-            const Text(
-              'What do you need?',
-              style: TextStyle(
+              const Text(
+                'What do you need?',
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827)),
-            ),
-            const SizedBox(height: 16),
-
-            // Submit Repair Request
-            _MenuCard(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF2563EB), Color(0xFF6366F1)],
+                  color: Colors.black,
+                ),
               ),
-              icon: Icons.build_circle_outlined,
-              iconColor: Colors.white,
-              title: 'Submit Repair Request',
-              subtitle:
-                  'Fill out a form and we\'ll guide you through basic troubleshooting.',
-              titleColor: Colors.white,
-              subtitleColor: Colors.white70,
-              showShadow: true,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const RepairRequestScreen()),
+              const SizedBox(height: 16),
+
+              // Submit Repair Request — solid black card (primary action)
+              _MenuCard(
+                backgroundColor: Colors.black,
+                icon: Icons.build_outlined,
+                iconColor: Colors.white,
+                title: 'Submit Your Repair Request',
+                subtitle:
+                    'Fill out a form and we\'ll guide you through basic troubleshooting before submitting repair request .',
+                titleColor: Colors.white,
+                subtitleColor: Colors.white70,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const RepairRequestScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Active Repair — jumps to the Repair tab; count excludes
+              // Completed and Declined requests.
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('repairRequests')
+                    .where('customerId', isEqualTo: uid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+                  final activeCount = docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final status = data['status'];
+                    return status != 'Completed' && status != 'Declined';
+                  }).length;
+
+                  return _MenuCard(
+                    backgroundColor: const Color(0xFF4B5563),
+                    icon: Icons.access_time,
+                    iconColor: Colors.white,
+                    title: 'Active Repair ($activeCount)',
+                    subtitle: 'Click to view your repair progress',
+                    titleColor: Colors.white,
+                    subtitleColor: Colors.white70,
+                    onTap: widget.onGoToRepairTab,
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Repair History — lighter gray card (least emphasized action)
+              _MenuCard(
+                backgroundColor: const Color(0xFF9CA3AF),
+                icon: Icons.description_outlined,
+                iconColor: Colors.white,
+                title: 'Repair History',
+                subtitle: 'View your completed repair and service record.',
+                titleColor: Colors.white,
+                subtitleColor: Colors.white70,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const RepairHistoryScreen()),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // "Need Help?" footer link — opens the support bottom sheet
+              Center(
+                child: GestureDetector(
+                  onTap: () => _showHelpSheet(context),
+                  child: const Text(
+                    'Need Help?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2563EB),
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Bottom sheet with the two support contact options (SMS / Facebook).
+  void _showHelpSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Drag handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Need Help?',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Reach out to us through any of these option',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Option 1: message the shop via SMS
+                _HelpOptionTile(
+                  icon: Icons.sms_outlined,
+                  label: 'Message us via SMS',
+                  subtitle: _kShopSmsNumber,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _launchSms(context, _kShopSmsNumber);
+                  },
+                ),
+                const SizedBox(height: 10),
+
+                // Option 2: open the shop's Facebook page
+                _HelpOptionTile(
+                  icon: Icons.facebook_outlined,
+                  label: 'Visit our Facebook Page',
+                  subtitle: 'Message us on facebook',
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _launchFacebook(context, _kShopFacebookUrl);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Opens the default SMS app pre-filled with the shop number.
+  Future<void> _launchSms(BuildContext context, String number) async {
+    final uri = Uri(scheme: 'sms', path: number);
+    final launched = await launchUrl(uri);
+    if (!launched && context.mounted) {
+      _showLaunchError(context, 'Could not open the SMS app.');
+    }
+  }
+
+  // Opens the shop's Facebook page in an external app/browser.
+  Future<void> _launchFacebook(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched && context.mounted) {
+      _showLaunchError(context, 'Could not open Facebook.');
+    }
+  }
+
+  void _showLaunchError(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+}
+
+/// One stat card in the "Your Repair Summary" row (In Process / Complete / Total).
+class _SummaryStatCard extends StatelessWidget {
+  final int value;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _SummaryStatCard({
+    required this.value,
+    required this.label,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.black, width: 1.2),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '$value',
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
               ),
             ),
-            const SizedBox(height: 12),
-
-            // Repair History
-            _MenuCard(
-              backgroundColor: Colors.white,
-              icon: Icons.history,
-              iconColor: const Color(0xFF6366F1),
-              title: 'Repair History',
-              subtitle: 'View your completed repairs and service records.',
-              titleColor: const Color(0xFF111827),
-              subtitleColor: const Color(0xFF6B7280),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const RepairHistoryScreen()),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B7280),
               ),
             ),
           ],
@@ -318,42 +413,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  Widget _buildStatusDot(String? status) {
-    Color color;
-    switch (status) {
-      case 'Pending':
-        color = const Color(0xFFF59E0B);
-        break;
-      case 'Accepted':
-        color = const Color(0xFF3B82F6);
-        break;
-      case 'In Home':
-      case 'In Shop':
-        color = const Color(0xFF8B5CF6);
-        break;
-      case 'In Process':
-        color = const Color(0xFFEC4899);
-        break;
-      case 'Waiting for Parts':
-        color = const Color(0xFFEF4444);
-        break;
-      case 'Declined':
-        color = const Color(0xFFDC2626);
-        break;
-      default:
-        color = const Color(0xFF6B7280);
-    }
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
 }
 
+/// Reusable dark menu card used for the 3 "What do you need?" actions.
 class _MenuCard extends StatelessWidget {
-  final Gradient? gradient;
   final Color? backgroundColor;
   final IconData icon;
   final Color iconColor;
@@ -361,11 +424,9 @@ class _MenuCard extends StatelessWidget {
   final String subtitle;
   final Color titleColor;
   final Color subtitleColor;
-  final bool showShadow;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _MenuCard({
-    this.gradient,
     this.backgroundColor,
     required this.icon,
     required this.iconColor,
@@ -373,7 +434,6 @@ class _MenuCard extends StatelessWidget {
     required this.subtitle,
     required this.titleColor,
     required this.subtitleColor,
-    this.showShadow = false,
     required this.onTap,
   });
 
@@ -383,33 +443,14 @@ class _MenuCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          gradient: gradient,
           color: backgroundColor,
           borderRadius: BorderRadius.circular(16),
-          border: gradient == null
-              ? Border.all(color: const Color(0xFFE5E7EB))
-              : null,
-          boxShadow: showShadow
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withOpacity(0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
         ),
         child: Row(
           children: [
-            Icon(icon, color: iconColor, size: 40),
+            Icon(icon, color: iconColor, size: 32),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -422,15 +463,79 @@ class _MenuCard extends StatelessWidget {
                           fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(subtitle,
-                      style:
-                          TextStyle(color: subtitleColor, fontSize: 13)),
+                      style: TextStyle(color: subtitleColor, fontSize: 12)),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right,
-                color: gradient != null
-                    ? Colors.white
-                    : const Color(0xFF9CA3AF)),
+            Icon(Icons.chevron_right, color: titleColor),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One row inside the "Need Help?" bottom sheet (SMS / Facebook option).
+class _HelpOptionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _HelpOptionTile({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.black45),
           ],
         ),
       ),

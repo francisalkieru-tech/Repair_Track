@@ -8,6 +8,10 @@ import '../../utils/constants.dart';
 import '../../services/storage_service.dart';
 import 'troubleshooting_screen.dart';
 
+/// "Repair Request" — form the customer fills out to start a repair
+/// request. Submitting goes to TroubleshootingScreen first, not
+/// straight to Firestore, so basic troubleshooting is offered before
+/// the request is actually filed.
 class RepairRequestScreen extends StatefulWidget {
   const RepairRequestScreen({super.key});
 
@@ -21,6 +25,7 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
   final _contactController = TextEditingController();
   final _addressController = TextEditingController();
   final _problemController = TextEditingController();
+  final _otherApplianceController = TextEditingController();
   final StorageService _storageService = StorageService();
   String? _selectedAppliance;
   Uint8List? _selectedImage;
@@ -32,7 +37,7 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
     _loadCustomerInfo();
   }
 
-  // Auto-fill customer info from Firestore
+  // Pre-fills the form with the customer's saved profile info.
   Future<void> _loadCustomerInfo() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -57,16 +62,17 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
     _contactController.dispose();
     _addressController.dispose();
     _problemController.dispose();
+    _otherApplianceController.dispose();
     super.dispose();
   }
 
+  // Opens the photo picker; on mobile lets the user choose camera or gallery.
   Future<void> _pickPhoto() async {
     ImageSource source = ImageSource.gallery;
 
-    // On web, go directly to gallery — if we go through a dialog/await
-    // first before calling pickImage, it breaks the user-gesture chain
-    // required by the browser to open the file dialog. On mobile, it's
-    // fine to offer a choice between Camera/Gallery.
+    // On web, skip straight to gallery — showing a chooser dialog first
+    // breaks the user-gesture chain the browser needs to open the file
+    // picker. On mobile it's fine to offer Camera/Gallery.
     if (!kIsWeb) {
       final chosen = await showModalBottomSheet<ImageSource>(
         context: context,
@@ -102,6 +108,8 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
     }
   }
 
+  // Validates the form, uploads the photo (if any), then moves to
+  // the troubleshooting flow carrying the form data forward.
   Future<void> _proceedToTroubleshooting() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedAppliance == null) {
@@ -113,12 +121,21 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
       );
       return;
     }
+    if (_selectedAppliance == 'Others' &&
+        _otherApplianceController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please specify your appliance.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
-    // If a photo is selected, upload it to Supabase Storage first before
-    // proceeding — to ensure we have a URL to include in the Firestore
-    // document later.
+    // Upload the photo first (if selected) so we have a URL ready for
+    // the Firestore document once the request is actually filed.
     String? photoUrl;
     if (_selectedImage != null) {
       try {
@@ -143,7 +160,12 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // Go to troubleshooting with the form data
+    // Resolve the final appliance label: the custom text if "Others"
+    // was picked, otherwise the selected type as-is.
+    final applianceType = _selectedAppliance == 'Others'
+        ? _otherApplianceController.text.trim()
+        : _selectedAppliance!;
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -152,7 +174,7 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
             'name': _nameController.text.trim(),
             'contactNumber': _contactController.text.trim(),
             'address': _addressController.text.trim(),
-            'applianceType': _selectedAppliance!,
+            'applianceType': applianceType,
             'problemDescription': _problemController.text.trim(),
             'photoUrl': photoUrl,
           },
@@ -165,280 +187,279 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFF),
-      appBar: AppBar(
-        title: const Text('Repair Request'),
-        backgroundColor: const Color(0xFF2563EB),
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Color(0xFF2563EB)),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Fill out the form below. After submission, we\'ll guide you through basic troubleshooting steps.',
-                        style:
-                            TextStyle(fontSize: 13, color: Color(0xFF374151)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Section: Your Information
-              _buildSectionLabel('Your Information'),
-              const SizedBox(height: 12),
-
-              _buildLabel('Full Name *'),
-              _buildField(
-                controller: _nameController,
-                hint: 'Juan dela Cruz',
-                icon: Icons.person_outline,
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Please enter your name' : null,
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Contact Number *'),
-              _buildField(
-                controller: _contactController,
-                hint: '09XXXXXXXXX',
-                icon: Icons.phone_outlined,
-                keyboard: TextInputType.phone,
-                validator: (v) {
-                  if (v == null || v.isEmpty)
-                    return 'Please enter contact number';
-                  if (v.length != 11) return 'Must be 11 digits';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Pickup / Service Address *'),
-              _buildField(
-                controller: _addressController,
-                hint: 'Barangay, City, Province',
-                icon: Icons.location_on_outlined,
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Please enter address' : null,
-              ),
-              const SizedBox(height: 24),
-
-              // Section: Appliance Info
-              _buildSectionLabel('Appliance Information'),
-              const SizedBox(height: 12),
-
-              _buildLabel('Appliance Type *'),
-              const SizedBox(height: 8),
-
-              // Appliance Grid
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 3,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.1,
-                children: AppConstants.applianceTypes.map((appliance) {
-                  final isSelected = _selectedAppliance == appliance;
-                  return GestureDetector(
-                    onTap: () =>
-                        setState(() => _selectedAppliance = appliance),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFF2563EB)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isSelected
-                              ? const Color(0xFF2563EB)
-                              : const Color(0xFFE5E7EB),
-                          width: 2,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header — solid black card with title + subtitle
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Repair Request',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _applianceIcon(appliance),
-                            size: 26,
-                            color: isSelected
-                                ? Colors.white
-                                : const Color(0xFF2563EB),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            appliance,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected
-                                  ? Colors.white
-                                  : const Color(0xFF374151),
+                      SizedBox(height: 4),
+                      Text(
+                        'Submit your repair request',
+                        style: TextStyle(fontSize: 13, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Info banner explaining what happens after submit
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.chat_bubble_outline,
+                          color: Colors.black87, size: 18),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Fill out the form below. After submission, we\'ll guide you through basic troubleshooting steps.',
+                          style:
+                              TextStyle(fontSize: 12, color: Color(0xFF374151)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                _buildLabel('Full Name *'),
+                _buildField(
+                  controller: _nameController,
+                  hint: 'e.g. Juan dela Cruz',
+                  icon: Icons.person_outline,
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Please enter your name' : null,
+                ),
+                const SizedBox(height: 16),
+
+                _buildLabel('Contact Number *'),
+                _buildField(
+                  controller: _contactController,
+                  hint: '09XX XXX XXXX',
+                  icon: Icons.phone_outlined,
+                  keyboard: TextInputType.phone,
+                  validator: (v) {
+                    if (v == null || v.isEmpty) {
+                      return 'Please enter contact number';
+                    }
+                    if (v.length != 11) return 'Must be 11 digits';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                _buildLabel('Address *'),
+                _buildField(
+                  controller: _addressController,
+                  hint: 'House/Bldg No., Street, Barangay, City, Province',
+                  icon: Icons.location_on_outlined,
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Please enter address' : null,
+                ),
+                const SizedBox(height: 16),
+
+                _buildLabel('Appliances Information'),
+                const SizedBox(height: 8),
+
+                // Appliance type list — one bordered box holding all
+                // options as tappable rows, matching the mockup's
+                // expanded dropdown look.
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFD1D5DB)),
+                  ),
+                  child: Column(
+                    children: [
+                      for (final appliance in AppConstants.applianceTypes)
+                        _ApplianceOptionTile(
+                          label: appliance,
+                          isSelected: _selectedAppliance == appliance,
+                          isLast: appliance ==
+                              AppConstants.applianceTypes.last,
+                          onTap: () =>
+                              setState(() => _selectedAppliance = appliance),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // Custom appliance name field — only shown when "Others" is picked
+                if (_selectedAppliance == 'Others') ...[
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _otherApplianceController,
+                    decoration: InputDecoration(
+                      hintText: 'Input here your appliance',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+
+                _buildLabel('Problem Description *'),
+                TextFormField(
+                  controller: _problemController,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    hintText:
+                        'Describe the problem in detail of the appliances (e.g. not cooling, making noise, not turning on...)',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  validator: (v) => v == null || v.isEmpty
+                      ? 'Please describe the problem'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+
+                _buildLabel('Appliances Photo (Optional)'),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'This help us better understand the problem.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                  ),
+                ),
+                // Photo picker: shows the selected preview, or a tap-to-add box
+                if (_selectedImage != null)
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          _selectedImage!,
+                          height: 140,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _selectedImage = null),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
                             ),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  InkWell(
+                    onTap: _pickPhoto,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 28),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Column(
+                        children: [
+                          Icon(Icons.add_photo_alternate_outlined,
+                              color: Colors.black54, size: 28),
+                          SizedBox(height: 6),
+                          Text(
+                            'Tap to add a phot',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.black54),
                           ),
                         ],
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
+                  ),
+                const SizedBox(height: 28),
 
-              _buildLabel('Problem Description *'),
-              TextFormField(
-                controller: _problemController,
-                maxLines: 4,
-                decoration: InputDecoration(
-                  hintText:
-                      'Describe the problem in detail (e.g. not cooling, making noise, not turning on...)',
-                  alignLabelWithHint: true,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                validator: (v) => v == null || v.isEmpty
-                    ? 'Please describe the problem'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Appliance Photo (Optional)'),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'This will help us better understand the problem.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-                ),
-              ),
-              if (_selectedImage != null)
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        _selectedImage!,
-                        height: 140,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
+                // Next button — proceeds to the troubleshooting guide
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _proceedToTroubleshooting,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedImage = null),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Next',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white),
                           ),
-                          child: const Icon(Icons.close,
-                              color: Colors.white, size: 16),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                InkWell(
-                  onTap: _pickPhoto,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: const Column(
-                      children: [
-                        Icon(Icons.add_a_photo_outlined,
-                            color: Color(0xFF9CA3AF), size: 24),
-                        SizedBox(height: 6),
-                        Text(
-                          'Tap to add a photo',
-                          style: TextStyle(
-                              fontSize: 12, color: Color(0xFF9CA3AF)),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
-              const SizedBox(height: 32),
-
-              // Next Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _proceedToTroubleshooting,
-                  icon: _isLoading
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.arrow_forward, color: Colors.white),
-                  label: Text(
-                    _isLoading ? 'Uploading...' : 'Next — Troubleshooting Guide',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                const SizedBox(height: 8),
+                const Center(
+                  child: Text(
+                    'click next to guide you to basic trouble shooting',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-            ],
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSectionLabel(String text) => Text(
-        text,
-        style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF111827)),
-      );
-
   Widget _buildLabel(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(text,
             style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500)),
+                fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
       );
 
   Widget _buildField({
@@ -458,25 +479,46 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
         ),
         validator: validator,
       );
+}
 
-  IconData _applianceIcon(String appliance) {
-    switch (appliance) {
-      case 'Refrigerator':
-        return Icons.kitchen;
-      case 'Air Conditioner':
-        return Icons.ac_unit;
-      case 'Television':
-        return Icons.tv;
-      case 'Washing Machine':
-        return Icons.local_laundry_service;
-      case 'Microwave':
-        return Icons.microwave;
-      case 'Electric Fan':
-        return Icons.wind_power;
-      case 'Water Dispenser':
-        return Icons.water_drop;
-      default:
-        return Icons.devices_other;
-    }
+/// One selectable row inside the "Appliances Information" list box.
+class _ApplianceOptionTile extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  const _ApplianceOptionTile({
+    required this.label,
+    required this.isSelected,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
+          border: isLast
+              ? null
+              : const Border(
+                  bottom: BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            color: isSelected ? const Color(0xFF2563EB) : Colors.black87,
+          ),
+        ),
+      ),
+    );
   }
 }

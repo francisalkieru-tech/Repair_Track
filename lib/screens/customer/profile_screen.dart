@@ -4,6 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
 import '../auth/Welcome_screen.dart';
 
+/// "My Profile" — view/edit screen for the customer's personal info.
+/// Toggles between a read-only view and an editable form via the
+/// pencil icon in the AppBar.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -36,6 +39,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  // Loads the customer's profile fields from Firestore.
   Future<void> _loadProfile() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -59,6 +63,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // Validates and saves the edited fields back to Firestore.
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -100,9 +105,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // Discards edits and reloads the saved values.
   void _cancelEdit() {
     setState(() => _isEditing = false);
-    _loadProfile(); // reset to original values
+    _loadProfile();
   }
 
   @override
@@ -110,14 +116,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFF),
       appBar: AppBar(
-        title: const Text('My Profile'),
-        backgroundColor: const Color(0xFF2563EB),
-        foregroundColor: Colors.white,
+        title: const Text(
+          'My Profile',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 0,
+        centerTitle: true,
         actions: [
           if (!_isLoading && !_isEditing)
             IconButton(
-              icon: const Icon(Icons.edit),
+              icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit Profile',
               onPressed: () => setState(() => _isEditing = true),
             ),
@@ -132,21 +146,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Avatar + email header
+                    // Avatar + name/email header
                     Center(
                       child: Column(
                         children: [
                           Container(
-                            width: 96,
-                            height: 96,
+                            width: 88,
+                            height: 88,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE4E6EB),
+                              color: Colors.white,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                  color: const Color(0xFFD1D5DB), width: 2),
+                                  color: Colors.black87, width: 1.5),
                             ),
-                            child: const Icon(Icons.person,
-                                color: Color(0xFF9CA3AF), size: 56),
+                            child: const Icon(Icons.person_outline,
+                                color: Colors.black87, size: 52),
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -156,7 +170,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF111827)),
+                                color: Colors.black),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -167,12 +181,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 16),
 
                     _buildSectionLabel('Personal Information'),
                     const SizedBox(height: 12),
 
-                    _buildLabel('Full Name'),
+                    _buildLabel('Name'),
                     _buildField(
                       controller: _nameController,
                       icon: Icons.person_outline,
@@ -183,6 +199,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 16),
 
                     _buildLabel('Email Address'),
+                    // Email is fixed to the account and cannot be edited here.
                     TextFormField(
                       initialValue: _email,
                       enabled: false,
@@ -193,12 +210,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Email cannot be changed.',
-                      style: TextStyle(
-                          fontSize: 11, color: Color(0xFF9CA3AF)),
                     ),
                     const SizedBox(height: 16),
 
@@ -218,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    _buildLabel('Address'),
+                    _buildLabel('Location'),
                     _buildField(
                       controller: _addressController,
                       icon: Icons.location_on_outlined,
@@ -228,6 +239,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 32),
 
+                    // Edit mode: Cancel / Save Changes buttons
                     if (_isEditing)
                       Row(
                         children: [
@@ -275,8 +287,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ],
                       ),
 
+                    // View mode: red-outline Logout button
                     if (!_isEditing) ...[
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 8),
                       const Divider(),
                       const SizedBox(height: 16),
                       SizedBox(
@@ -286,14 +299,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           icon: const Icon(Icons.logout,
                               color: Color(0xFFDC2626), size: 18),
                           label: const Text(
-                            'Logout',
+                            'Log Out',
                             style: TextStyle(
                                 color: Color(0xFFDC2626),
                                 fontWeight: FontWeight.w600),
                           ),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            side: const BorderSide(color: Color(0xFFFECACA)),
+                            side: const BorderSide(color: Color(0xFFDC2626)),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                           ),
@@ -307,6 +320,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // Confirmation dialog before signing the customer out.
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -350,7 +364,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF111827)),
+            color: Colors.black),
       );
 
   Widget _buildLabel(String text) => Padding(
@@ -360,6 +374,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF6B7280))),
       );
 
+  // Shared text field builder for the editable profile inputs.
   Widget _buildField({
     required TextEditingController controller,
     required IconData icon,

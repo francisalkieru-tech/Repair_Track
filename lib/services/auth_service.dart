@@ -1,7 +1,5 @@
-import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -49,12 +47,22 @@ class AuthService {
     required String contactNumber,
   }) async {
     try {
+      // see if locked before make new Auth account
+      final lockDoc = await _db.collection('adminSetup').doc('lock').get();
+      if (lockDoc.exists) {
+        return 'Admin registration is closed. Only one admin account is allowed for this shop.';
+      }
+
       UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      await _db.collection('admins').doc(result.user!.uid).set({
+      final batch = _db.batch();
+      final adminRef = _db.collection('admins').doc(result.user!.uid);
+      final lockRef = _db.collection('adminSetup').doc('lock');
+
+      batch.set(adminRef, {
         'uid': result.user!.uid,
         'name': name,
         'shopName': shopName,
@@ -65,86 +73,17 @@ class AuthService {
         'role': 'admin',
       });
 
-      return null;
-    } catch (e) {
-      return e.toString();
-    }
-  }
-
-  // GENERATE random 6-digit code
-  String _generateCode() {
-    Random random = Random();
-    return (100000 + random.nextInt(900000)).toString();
-  }
-
-  // SEND verification code via SMS
-  Future<String?> sendAdminCode(String contactNumber) async {
-    String code = _generateCode();
-
-    try {
-      await _db.collection('adminCodes').add({
-        'code': code,
-        'contactNumber': contactNumber,
-        'used': false,
-        'createdAt': DateTime.now(),
-        'expiresAt': DateTime.now().add(const Duration(minutes: 10)),
+      batch.set(lockRef, {
+        'createdAt': DateTime.now().toString(),
+        'createdBy': result.user!.uid,
       });
 
-      // TEMPORARY for testing — will be seen in VS Code terminal
-      // ignore: avoid_print
-      print('=============================');
-      // ignore: avoid_print
-      print('TEST CODE: $code');
-      // ignore: avoid_print
-      print('=============================');
-
-      // Uncomment this when you have an actual Semaphore API key
-      // final response = await http.post(
-      //   Uri.parse('https://api.semaphore.co/api/v4/messages'),
-      //   body: {
-      //     'apikey': 'YOUR_SEMAPHORE_API_KEY',
-      //     'number': contactNumber,
-      //     'message': 'Your Repair Tracker admin code is: $code. Valid for 10 minutes.',
-      //     'sendername': 'REPAIRAPP',
-      //   },
-      // );
-      // if (response.statusCode != 200) {
-      //   return 'Failed to send SMS. Try again.';
-      // }
+      await batch.commit();
 
       return null;
     } catch (e) {
       return e.toString();
     }
-  }
-
-  // VERIFY the SMS code
-  Future<String?> verifyAdminCode(String contactNumber, String code) async {
-    final now = DateTime.now();
-
-    final query = await _db
-        .collection('adminCodes')
-        .where('code', isEqualTo: code)
-        .where('contactNumber', isEqualTo: contactNumber)
-        .where('used', isEqualTo: false)
-        .get();
-
-    if (query.docs.isEmpty) {
-      return 'Invalid code. Try again.';
-    }
-
-    final expiresAt =
-        (query.docs.first['expiresAt'] as Timestamp).toDate();
-    if (now.isAfter(expiresAt)) {
-      return 'Code has expired. Request a new code.';
-    }
-
-    await _db
-        .collection('adminCodes')
-        .doc(query.docs.first.id)
-        .update({'used': true});
-
-    return null;
   }
 
   // LOGIN
@@ -195,4 +134,4 @@ class AuthService {
     }
     return 'An error occurred. Try again.';
   }
-}  // ← closing bracket ng AuthService class
+} 

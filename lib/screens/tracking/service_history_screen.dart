@@ -164,6 +164,13 @@ class ServiceHistoryScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
+          // Warranty Information — lalabas lang kung may warranty na
+          // naitala (ibig sabihin, na-set ito noong "Completed" ang status)
+          if (data['warrantyMonths'] != null) ...[
+            _buildWarrantySection(data),
+            const SizedBox(height: 16),
+          ],
+
           // Customer submitted photo
           if (data['initialPhotoUrl'] != null &&
               (data['initialPhotoUrl'] as String).isNotEmpty) ...[
@@ -410,6 +417,94 @@ class ServiceHistoryScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWarrantySection(Map<String, dynamic> data) {
+    final months = data['warrantyMonths'] as int?;
+    final terms = data['warrantyTerms'] as String? ?? '';
+    final expiresAt = data['warrantyExpiresAt'] as Timestamp?;
+
+    final now = DateTime.now();
+    final isActive = expiresAt != null && expiresAt.toDate().isAfter(now);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.shield_outlined,
+                  size: 16, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              const Text(
+                'Warranty Information',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const Spacer(),
+              if (expiresAt != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? const Color(0xFFDCFCE7)
+                        : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    isActive ? 'Active' : 'Expired',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isActive
+                          ? const Color(0xFF166534)
+                          : const Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const Divider(height: 16),
+          _buildRow('Coverage',
+              months != null ? '$months ${months == 1 ? 'buwan' : 'buwan'}' : ''),
+          if (expiresAt != null)
+            _buildRow('Valid Until', _formatDate(expiresAt.toDate())),
+          if (terms.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            const Text(
+              'Terms',
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              terms,
+              style: const TextStyle(
+                  fontSize: 13, color: Color(0xFF111827)),
+            ),
+          ],
         ],
       ),
     );

@@ -35,12 +35,10 @@ class _MyAppState extends State<MyApp> {
   void _initDeepLinks() async {
     _appLinks = AppLinks();
 
-    // Kapag bukas na ang app at may incoming link
     _appLinks.uriLinkStream.listen((uri) {
       _handleLink(uri);
     });
 
-    // Kapag binuksan ang app via link (cold start)
     final initialUri = await _appLinks.getInitialLink();
     if (initialUri != null) {
       _handleLink(initialUri);
@@ -64,9 +62,6 @@ class _MyAppState extends State<MyApp> {
 
     if (trackingId == null || trackingId.isEmpty) return;
 
-    // I-check muna sa Firestore kung Completed na ang record — kapag
-    // Completed, ipapakita sa ServiceHistoryScreen (mas detalyado);
-    // kapag hindi pa, ipapakita sa TrackingScreen (ongoing progress).
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('repairRequests')
@@ -75,8 +70,6 @@ class _MyAppState extends State<MyApp> {
           .get();
 
       if (snapshot.docs.isEmpty) {
-        // Hindi nahanap — ipakita na lang sa TrackingScreen
-        // (magpapakita ng "not found" message doon)
         _pushScreen(TrackingScreen(trackingId: trackingId));
         return;
       }
@@ -90,7 +83,6 @@ class _MyAppState extends State<MyApp> {
         _pushScreen(TrackingScreen(trackingId: trackingId));
       }
     } catch (_) {
-      // Kung may error sa Firestore lookup, fallback sa TrackingScreen
       _pushScreen(TrackingScreen(trackingId: trackingId));
     }
   }
