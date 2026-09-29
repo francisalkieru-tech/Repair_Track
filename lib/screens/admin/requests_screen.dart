@@ -13,13 +13,9 @@ import '../../services/firestore_service.dart';
 import '../../services/sms_service.dart';
 import '../../services/storage_service.dart';
 import 'admin_theme.dart';
+import '../../utils/technician_availability.dart';
+import '../../utils/constants.dart';
 
-// Repair request management screen.
-// Tabs: New Request, Accepted, and In Process.
-// Handles request listing and filtering.
-// Handles request review actions.
-// Handles repair status updates.
-// Handles QR code display.
 
 /// Requests page.
 class RequestsScreen extends StatefulWidget {
@@ -37,10 +33,10 @@ class _RequestsScreenState extends State<RequestsScreen>
   @override
   void initState() {
     super.initState();
-// Creates the three request tabs.
-// Keeps the TabBar and TabBarView synchronized.
-// Prevents tab count mismatch errors.
+
     _tabController = TabController(length: 3, vsync: this);
+
+    _firestoreService.applyExpiredPartsDecisionDefaults();
   }
 
   @override
@@ -51,84 +47,86 @@ class _RequestsScreenState extends State<RequestsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          color: Colors.white,
-          child: TabBar(
-            controller: _tabController,
-            labelColor: kAdminBrand,
-            unselectedLabelColor: kAdminTextGray,
-            indicatorColor: kAdminBrand,
-            labelStyle:
-                const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            tabs: const [
-              Tab(text: 'New Request'),
-              Tab(text: 'Accepted'),
-              Tab(text: 'In Process'),
-            ],
+    return Container(
+      color: kAdminBg,
+      child: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: kAdminTextDark,
+              unselectedLabelColor: kAdminTextGray,
+              indicatorColor: kAdminTextDark,
+              indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              tabs: const [
+                Tab(text: 'New Request'),
+                Tab(text: 'Accepted'),
+                Tab(text: 'In Process'),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: _firestoreService.streamRepairRequests(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-              final allDocs = snapshot.data?.docs ?? [];
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestoreService.streamRepairRequests(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                final allDocs = snapshot.data?.docs ?? [];
 
-// Filters requests using their Firestore status.
-// Each request is checked by its status.
-// Status values must match exactly.
-// Firestore status matching is case-sensitive.
-// Example: "Pending" is different from "pending".
 
-// New Request: pending admin review.
-              final pendingDocs = allDocs.where((d) {
-                final data = d.data() as Map<String, dynamic>;
-                return data['status'] == 'Pending';
-              }).toList();
+  // New Request: pending admin review.
+                final pendingDocs = allDocs.where((d) {
+                  final data = d.data() as Map<String, dynamic>;
+                  return data['status'] == 'Pending';
+                }).toList();
 
-// Accepted: approved requests.
-// Requests not yet in active repair.
-              final acceptedDocs = allDocs.where((d) {
-                final data = d.data() as Map<String, dynamic>;
-                return data['status'] == 'Accepted';
-              }).toList();
+  // Accepted: approved requests.
+  // Requests not yet in active repair.
+                final acceptedDocs = allDocs.where((d) {
+                  final data = d.data() as Map<String, dynamic>;
+                  return data['status'] == 'Accepted';
+                }).toList();
 
-// In Process: active repair requests.
-// Includes current active repair stages.
-// Add new active statuses here when needed.
-// Excludes completed and declined requests.
-// Displays active repair requests.
-              final inProcessDocs = allDocs.where((d) {
-                final data = d.data() as Map<String, dynamic>;
-                final s = data['status'];
-                return s != 'Pending' &&
-                    s != 'Accepted' &&
-                    s != 'Completed' &&
-                    s != 'Declined';
-              }).toList();
+                final inProcessDocs = allDocs.where((d) {
+                  final data = d.data() as Map<String, dynamic>;
+                  final s = data['status'];
+                  return s != 'Pending' &&
+                      s != 'Accepted' &&
+                      s != 'Completed' &&
+                      s != 'Declined';
+                }).toList();
 
-              return TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildList(pendingDocs,
-                      emptyText: 'No new repair requests.'),
-                  _buildList(acceptedDocs,
-                      emptyText: 'No accepted requests yet.'),
-                  _buildList(inProcessDocs,
-                      emptyText: 'No ongoing repairs right now.'),
-                ],
-              );
-            },
+                return TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildList(pendingDocs,
+                        emptyText: 'No new repair requests.'),
+                    _buildList(acceptedDocs,
+                        emptyText: 'No accepted requests yet.'),
+                    _buildList(inProcessDocs,
+                        emptyText: 'No ongoing repairs right now.'),
+                  ],
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -139,9 +137,10 @@ class _RequestsScreenState extends State<RequestsScreen>
         child: Text(emptyText, style: const TextStyle(color: kAdminTextGray)),
       );
     }
-    return ListView.builder(
+    return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: docs.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final doc = docs[index];
         final data = doc.data() as Map<String, dynamic>;
@@ -152,8 +151,6 @@ class _RequestsScreenState extends State<RequestsScreen>
 }
 
 // QR is available only for eligible statuses.
-// Checks whether the current status allows QR viewing.
-// Status matching is case-sensitive.
 const _kQrEligibleStatuses = {
   'In Home',
   'In Shop',
@@ -162,11 +159,6 @@ const _kQrEligibleStatuses = {
   'Completed',
 };
 
-// Builds a repair request card.
-// Used by all three request tabs.
-// Displays request information and actions.
-// Shows tracking and repair details.
-// Includes status and update controls.
 Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic> data) {
     final status = data['status'] ?? 'Pending';
     final trackingId = data['trackingId'] ?? '';
@@ -174,105 +166,172 @@ Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic>
     final applianceType = data['applianceType'] ?? '';
     final contactNumber = data['contactNumber'] ?? '';
     final assignedTechnician = data['assignedTechnician'] as String?;
+    final partsDecisionStatus = data['partsDecisionStatus'] as String?;
+    final partsSource = data['partsSource'] as String?;
+    final showPartsReadyBadge =
+        status == 'Waiting for Parts' && partsDecisionStatus == 'decided';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
+    return Material(
+      color: const Color(0xFFD9D9D9),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: () => _handleCardTap(context, docId, data),
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    trackingId,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      letterSpacing: 1,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  _buildStatusBadge(status),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '$applianceType • $contactNumber',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-              if (assignedTechnician != null &&
-                  assignedTechnician.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Row(
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.engineering_outlined,
-                        size: 13, color: Color(0xFF9CA3AF)),
-                    const SizedBox(width: 4),
+                    const Text(
+                      'Tracking ID:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF555555),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          trackingId,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                            letterSpacing: 1,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Text(
+                          'Status : ',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
+                          ),
+                        ),
+                        _buildStatusBadge(status),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
                     Text(
-                      assignedTechnician,
+                      'Name: $name',
                       style: const TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF9CA3AF),
+                        color: Color(0xFF444444),
                       ),
                     ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: _kQrEligibleStatuses.contains(status)
-                    ? MainAxisAlignment.spaceBetween
-                    : MainAxisAlignment.end,
-                children: [
-                  if (_kQrEligibleStatuses.contains(status))
-                    TextButton.icon(
-                      onPressed: () => _showQrDialog(context, trackingId, name),
-                      icon: const Icon(Icons.qr_code_2, size: 16),
-                      label: const Text('View QR'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF166534),
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                    Text(
+                      'Appliance: $applianceType',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF444444),
                       ),
                     ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Text(
-                        'Update',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2563EB),
+                    Text(
+                      'Contact Number: $contactNumber',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF444444),
+                      ),
+                    ),
+                    if (assignedTechnician != null &&
+                        assignedTechnician.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.engineering_outlined,
+                              size: 13, color: Color(0xFF666666)),
+                          const SizedBox(width: 4),
+                          Text(
+                            assignedTechnician,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF666666),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (showPartsReadyBadge) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          partsSource == 'Customer Supplied'
+                              ? 'Customer will supply part — ready to resume'
+                              : 'Shop to supply part — ready to resume',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF065F46),
+                          ),
                         ),
                       ),
-                      SizedBox(width: 4),
-                      Icon(Icons.chevron_right,
-                          size: 18, color: Color(0xFF2563EB)),
                     ],
+                    if (_kQrEligibleStatuses.contains(status)) ...[
+                      const SizedBox(height: 6),
+                      InkWell(
+                        onTap: () =>
+                            showQrDialog(context, trackingId, name),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.qr_code_2,
+                                size: 15, color: Colors.black),
+                            SizedBox(width: 4),
+                            Text(
+                              'View QR',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Material(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _handleCardTap(context, docId, data),
+                  child: const Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Update',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right,
+                            size: 18, color: Colors.white),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
             ],
           ),
@@ -281,10 +340,6 @@ Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic>
     );
   }
 
-// Opens the correct modal for the request status.
-// Pending requests open the review sheet.
-// Other requests open the status update sheet.
-// Selects the appropriate modal.
 void _handleCardTap(BuildContext context, String docId, Map<String, dynamic> data) {
     final status = data['status'] ?? 'Pending';
     if (status == 'Pending') {
@@ -294,22 +349,66 @@ void _handleCardTap(BuildContext context, String docId, Map<String, dynamic> dat
     }
   }
 
-void _showQrDialog(BuildContext context, String trackingId, String customerName) {
+void showQrDialog(BuildContext context, String trackingId, String customerName) {
     showDialog(
       context: context,
-      builder: (context) => _QrCodeDialog(
-        trackingId: trackingId,
-        customerName: customerName,
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: _QrCodeDialog(
+            trackingId: trackingId,
+            customerName: customerName,
+          ),
+        ),
       ),
     );
   }
 
+void _showCenteredDialog(BuildContext context, Widget child) {
+  showGeneralDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Dismiss',
+    barrierColor: Colors.black.withOpacity(0.35),
+    transitionDuration: const Duration(milliseconds: 220),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
+            child: Material(
+              color: Colors.transparent,
+              child: child,
+            ),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      return BackdropFilter(
+        filter: ui.ImageFilter.blur(
+          sigmaX: 6 * animation.value,
+          sigmaY: 6 * animation.value,
+        ),
+        child: FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            ),
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 void _openReviewSheet(BuildContext context, String docId, Map<String, dynamic> data) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ReviewRequestSheet(
+    _showCenteredDialog(
+      context,
+      _ReviewRequestSheet(
         docId: docId,
         trackingId: data['trackingId'] ?? '',
         name: data['name'] ?? '',
@@ -325,11 +424,9 @@ void _openReviewSheet(BuildContext context, String docId, Map<String, dynamic> d
 void _openUpdateSheet(BuildContext context, String docId, Map<String, dynamic> data) {
     final scheduledVisit = data['scheduledVisit'] as Timestamp?;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _UpdateStatusSheet(
+    _showCenteredDialog(
+      context,
+      _UpdateStatusSheet(
         docId: docId,
         currentStatus: data['status'] ?? 'Pending',
         trackingId: data['trackingId'] ?? '',
@@ -337,34 +434,325 @@ void _openUpdateSheet(BuildContext context, String docId, Map<String, dynamic> d
         applianceType: data['applianceType'] ?? '',
         currentTechnician: data['assignedTechnician'] as String?,
         initialScheduledDate: scheduledVisit?.toDate(),
+        partsDecisionStatus: data['partsDecisionStatus'] as String?,
+        partsNeededNote: _latestPartsNote(data),
+        resolvedPartsSource: data['partsSource'] as String?,
       ),
     );
   }
 
+// The technician's "what part is needed" note lives as the most
+// recent statusHistory entry with status == 'Waiting for Parts'.
+String? _latestPartsNote(Map<String, dynamic> data) {
+  final history = (data['statusHistory'] as List?)?.cast<dynamic>() ?? [];
+  for (final entry in history.reversed) {
+    final e = entry as Map<String, dynamic>;
+    if (e['status'] == 'Waiting for Parts' &&
+        (e['note'] as String?)?.isNotEmpty == true) {
+      return e['note'] as String;
+    }
+  }
+  return null;
+}
+
+class _TechnicianPickerField extends StatefulWidget {
+  final String? initialTechnician;
+  final void Function(String? name, String? id) onChanged;
+
+  const _TechnicianPickerField({
+    this.initialTechnician,
+    required this.onChanged,
+  });
+
+  @override
+  State<_TechnicianPickerField> createState() =>
+      _TechnicianPickerFieldState();
+}
+
+class _TechnicianPickerFieldState extends State<_TechnicianPickerField> {
+  final FirestoreService _firestoreService = FirestoreService();
+  String? _selectedTechnician;
+  String? _selectedTechnicianId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTechnician = widget.initialTechnician;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestoreService.streamRepairRequests(),
+      builder: (context, requestsSnap) {
+        final allData = (requestsSnap.data?.docs ?? [])
+            .map((d) => d.data() as Map<String, dynamic>)
+            .toList();
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: _firestoreService.streamTechnicians(),
+          builder: (context, snapshot) {
+            final docs = snapshot.data?.docs ?? [];
+            final nameToId = <String, String>{
+              for (final doc in docs)
+                (doc.data() as Map<String, dynamic>)['name'] as String: doc.id,
+            };
+            final technicians = nameToId.keys.toList();
+
+            if (_selectedTechnician != null &&
+                !technicians.contains(_selectedTechnician)) {
+              technicians.add(_selectedTechnician!);
+            }
+
+            final resolvedId =
+                _selectedTechnician == null ? null : nameToId[_selectedTechnician];
+            if (resolvedId != _selectedTechnicianId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() => _selectedTechnicianId = resolvedId);
+                  widget.onChanged(_selectedTechnician, resolvedId);
+                }
+              });
+            }
+
+            return DropdownButtonFormField<String>(
+              initialValue: _selectedTechnician,
+              hint: const Text('Select a technician'),
+              items: [
+                ...technicians.map((name) {
+                  final activeJobs = activeJobsForTechnician(allData, name);
+                  final activeCount = activeJobs.length;
+                  final isSelf = name == _selectedTechnician;
+                  final onHomeVisit = activeJobs
+                      .any((r) => r['status'] == AppConstants.statusInHome);
+                  final isFull = !isSelf &&
+                      !isTechnicianAvailable(allData, name);
+                  final label = !isFull
+                      ? '$name ($activeCount/$kMaxActiveJobsPerTechnician)'
+                      : onHomeVisit
+                          ? '$name — On a home visit'
+                          : '$name — Full ($activeCount/$kMaxActiveJobsPerTechnician)';
+                  return DropdownMenuItem(
+                    value: name,
+                    enabled: !isFull,
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: isFull ? const Color(0xFF9CA3AF) : null,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedTechnician = value;
+                  _selectedTechnicianId = value == null ? null : nameToId[value];
+                });
+                widget.onChanged(value, value == null ? null : nameToId[value]);
+              },
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 Widget _buildStatusBadge(String status) {
     final colors = statusColors(status);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: colors.$1,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        status,
+        AppConstants.displayLabel(status),
         style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
           color: colors.$2,
         ),
       ),
     );
   }
-// Repair status update modal.
-// Handles the repair status progression.
-// Provides the main status update form.
-// Fields depend on the selected status.
-// Required fields vary by status.
-// Uses conditional field rules below.
+
+class _PartsDecisionPanel extends StatefulWidget {
+  final String docId;
+  final String? partsNeededNote;
+  final String? partsDecisionStatus;
+
+  const _PartsDecisionPanel({
+    required this.docId,
+    this.partsNeededNote,
+    this.partsDecisionStatus,
+  });
+
+  @override
+  State<_PartsDecisionPanel> createState() => _PartsDecisionPanelState();
+}
+
+class _PartsDecisionPanelState extends State<_PartsDecisionPanel> {
+  final _detailsController = TextEditingController();
+  bool _isSending = false;
+  // widget.partsDecisionStatus is a one-time snapshot passed in when
+  // this panel was built 
+  bool _locallyMarkedAwaiting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.partsNeededNote != null && widget.partsNeededNote!.isNotEmpty) {
+      _detailsController.text = widget.partsNeededNote!;
+    }
+  }
+
+  @override
+  void dispose() {
+    _detailsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _notifyCustomer() async {
+    if (_detailsController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter the part name/price to show the customer.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSending = true);
+    try {
+      await FirestoreService().openPartsDecision(
+        docId: widget.docId,
+        partDetails: _detailsController.text,
+      );
+      if (mounted) {
+        setState(() => _locallyMarkedAwaiting = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Customer notified. They have 24 hours to choose — '
+                'if they don\'t, the shop will supply it by default.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to notify customer: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final awaitingCustomer =
+        widget.partsDecisionStatus == AppConstants.partsDecisionAwaitingCustomer ||
+            _locallyMarkedAwaiting;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.inventory_2_outlined,
+                  size: 16, color: Color(0xFF9A3412)),
+              SizedBox(width: 6),
+              Text('Part Needed',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF9A3412))),
+            ],
+          ),
+          if (widget.partsNeededNote != null &&
+              widget.partsNeededNote!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Technician\'s note: "${widget.partsNeededNote}"',
+                style: const TextStyle(
+                    fontSize: 13, color: Color(0xFF7C2D12))),
+          ],
+          const SizedBox(height: 10),
+          if (awaitingCustomer)
+            const Text(
+              'Waiting for the customer to choose who supplies the part. '
+              'If they don\'t respond within 24 hours, the shop will '
+              'supply it by default.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF7C2D12)),
+            )
+          else ...[
+            const Text(
+              'Enter the part and price to notify the customer, so they '
+              'can choose whether the shop or they will supply it:',
+              style: TextStyle(fontSize: 13, color: Color(0xFF7C2D12)),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _detailsController,
+              decoration: InputDecoration(
+                hintText: 'e.g. Compressor — ₱1,200',
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.all(10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFFDBA74)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSending ? null : _notifyCustomer,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF9A3412),
+                  foregroundColor: Colors.white,
+                ),
+                child: _isSending
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Text('Notify Customer'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _UpdateStatusSheet extends StatefulWidget {
   final String docId;
   final String currentStatus;
@@ -373,6 +761,9 @@ class _UpdateStatusSheet extends StatefulWidget {
   final String applianceType;
   final String? currentTechnician;
   final DateTime? initialScheduledDate;
+  final String? partsDecisionStatus;
+  final String? partsNeededNote;
+  final String? resolvedPartsSource;
 
   const _UpdateStatusSheet({
     required this.docId,
@@ -382,6 +773,9 @@ class _UpdateStatusSheet extends StatefulWidget {
     required this.applianceType,
     this.currentTechnician,
     this.initialScheduledDate,
+    this.partsDecisionStatus,
+    this.partsNeededNote,
+    this.resolvedPartsSource,
   });
 
   @override
@@ -397,6 +791,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   late String _selectedStatus;
   String? _partsSource;
   String? _selectedTechnician;
+  String? _selectedTechnicianId;
   DateTime? _scheduledDateTime;
   Uint8List? _selectedImage;
   bool _isSubmitting = false;
@@ -408,42 +803,24 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         'damage or misuse.',
   );
 
-// Defines the allowed repair status flow.
-// Controls the next status options.
-// Edit this map to change the status flow.
-// Format: current status -> next statuses.
-// Gets valid next statuses for the current stage.
-// Prevents selecting previous stages.
-// Keeps status progression in order.
-// Hides invalid previous statuses.
   static const Map<String, List<String>> _nextStatusOptions = {
     'Accepted': ['In Shop', 'In Home'],
     'In Shop': ['In Process', 'Waiting for Parts'],
     'In Home': ['In Process', 'Waiting for Parts', 'Completed'],
+    'Queued': ['In Process'],
     'Waiting for Parts': ['In Process'],
-    'In Process': ['Waiting for Parts', 'Completed'],
+    'In Process': ['Waiting for Parts', 'Pending Review', 'Completed'],
+    'Pending Review': ['Completed', 'In Process'],
   };
 
   List<String> get _availableStatuses =>
       _nextStatusOptions[widget.currentStatus] ?? [widget.currentStatus];
 
-// Parts source is optional for active repairs.
-// Records where the replacement part comes from.
-// Used when a parts source must be recorded.
-// Supports customer- or shop-supplied parts.
   static const _statusesNeedingPartsSource = {
     'In Process',
     'Waiting for Parts',
   };
 
-// Controls fields shown for each status.
-// Fields are displayed based on the selected status.
-// Checks whether conditional fields are visible.
-// Controls warranty and parts source fields.
-// Completion requires a service note.
-// The note stores the service summary.
-// Waiting for Parts also requires a note.
-// Records the required repair details.
   bool get _noteRequired =>
       _selectedStatus == 'Completed' || _selectedStatus == 'Waiting for Parts';
   bool get _partsSourceRelevant =>
@@ -454,9 +831,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   @override
   void initState() {
     super.initState();
-// Selects the first valid next status by default.
-// The current status is not selectable.
-// Keeps the status flow moving forward.
+
     _selectedStatus = _availableStatuses.first;
     _selectedTechnician = widget.currentTechnician;
     _scheduledDateTime = widget.initialScheduledDate;
@@ -486,6 +861,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
           : const TimeOfDay(hour: 9, minute: 0),
     );
     if (time == null) return;
+    if (!mounted) return;
 
     setState(() {
       _scheduledDateTime =
@@ -538,41 +914,11 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     );
     if (picked != null) {
       final bytes = await picked.readAsBytes();
+      if (!mounted) return;
       setState(() => _selectedImage = bytes);
     }
   }
 
-  Future<String?> _showAddTechnicianDialog() {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New Technician'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Technician name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-// Validates and submits the repair status update.
-// Uploads photos, updates Firestore, creates QR status, and sends SMS.
-// Stops submission when required data is missing.
-// Handles update errors through the try/catch block.
-// SMS errors are handled by the SMS service.
-// The SMS service manages customer notifications.
   Future<void> _submitUpdate() async {
     if (_scheduleRequired && _scheduledDateTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -615,13 +961,34 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         );
       }
 
+      // If Admin is moving this job to "In Process" but the assigned
+      // technician is still busy with other active jobs, downgrade
+      // automatically to "Queued" instead — Admin doesn't pick
+      // between these manually, the system decides based on the
+      // technician's actual workload.
+      var finalStatus = _selectedStatus;
+      if (_selectedStatus == 'In Process' && _selectedTechnician != null) {
+        final allJobsSnap =
+            await FirebaseFirestore.instance.collection('repairRequests').get();
+        final allJobs = allJobsSnap.docs
+            .map((d) => {...d.data(), 'id': d.id})
+            .toList();
+        final otherActiveJobs = activeJobsForTechnician(
+                allJobs, _selectedTechnician!)
+            .where((j) => j['id'] != widget.docId);
+        if (otherActiveJobs.isNotEmpty) {
+          finalStatus = 'Queued';
+        }
+      }
+
       await _firestoreService.updateRepairStatus(
         docId: widget.docId,
         trackingId: widget.trackingId,
-        newStatus: _selectedStatus,
+        newStatus: finalStatus,
         note: _noteController.text,
         partsSource: _partsSourceRelevant ? _partsSource : null,
         assignedTechnician: _selectedTechnician,
+        assignedTechnicianUid: _selectedTechnicianId,
         scheduledDate: _scheduleRequired ? _scheduledDateTime : null,
         photoUrl: photoUrl,
         warrantyMonths: _warrantyRelevant ? _warrantyMonths : null,
@@ -630,12 +997,6 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
             : null,
       );
 
-// Creates the QR record when the status becomes In Home.
-// Creates it only if needed.
-// Makes the QR available without another shop visit.
-// Stores the tracking ID as the QR content.
-// Creates the QR only once.
-// Scanned details are loaded from Firestore.
       if (_selectedStatus == 'In Home') {
         await FirebaseFirestore.instance
             .collection('repairRequests')
@@ -660,6 +1021,28 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         scheduledDate: _scheduleRequired ? _scheduledDateTime : null,
       );
 
+      if (_selectedStatus == 'Completed') {
+        try {
+          final reqDoc = await FirebaseFirestore.instance
+              .collection('repairRequests')
+              .doc(widget.docId)
+              .get();
+          final customerId = reqDoc.data()?['customerId'] as String?;
+          if (customerId != null && customerId.isNotEmpty) {
+            await _firestoreService.createNotification(
+              recipientType: 'customer',
+              recipientId: customerId,
+              title: 'Repair completed',
+              body: 'Your ${widget.applianceType} (ID: ${widget.trackingId}) '
+                  'is ready. Check your warranty details.',
+              trackingId: widget.trackingId,
+            );
+          }
+        } catch (_) {
+          // Non-fatal.
+        }
+      }
+
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -682,64 +1065,6 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
     }
   }
 
-  Widget _buildTechnicianField() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestoreService.streamTechnicians(),
-      builder: (context, snapshot) {
-        final technicians = (snapshot.data?.docs ?? [])
-            .map((doc) => (doc.data() as Map<String, dynamic>)['name'] as String)
-            .toList();
-
-        if (_selectedTechnician != null &&
-            !technicians.contains(_selectedTechnician)) {
-          technicians.add(_selectedTechnician!);
-        }
-
-        return DropdownButtonFormField<String>(
-          initialValue: _selectedTechnician,
-          hint: const Text('Not yet assigned'),
-          items: [
-            ...technicians.map(
-              (name) => DropdownMenuItem(value: name, child: Text(name)),
-            ),
-            const DropdownMenuItem(
-              value: '__add_new__',
-              child: Row(
-                children: [
-                  Icon(Icons.add, size: 16, color: Color(0xFF2563EB)),
-                  SizedBox(width: 6),
-                  Text('Add New Technician',
-                      style: TextStyle(color: Color(0xFF2563EB))),
-                ],
-              ),
-            ),
-          ],
-          onChanged: (value) async {
-            if (value == '__add_new__') {
-              final newName = await _showAddTechnicianDialog();
-              if (newName != null && newName.trim().isNotEmpty) {
-                await _firestoreService.addTechnician(newName.trim());
-                setState(() => _selectedTechnician = newName.trim());
-              }
-            } else {
-              setState(() => _selectedTechnician = value);
-            }
-          },
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: const Color(0xFFF9FAFB),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -747,9 +1072,16 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 30,
+              offset: const Offset(0, 12),
+            ),
+          ],
         ),
         padding: const EdgeInsets.all(20),
         child: SingleChildScrollView(
@@ -757,18 +1089,8 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5E7EB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -778,12 +1100,21 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      widget.currentStatus,
+                      AppConstants.displayLabel(widget.currentStatus),
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                         color: statusColors(widget.currentStatus).$2,
                       ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    customBorder: const CircleBorder(),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close,
+                          size: 20, color: Color(0xFF6B7280)),
                     ),
                   ),
                 ],
@@ -799,296 +1130,434 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
               ),
               const SizedBox(height: 20),
 
-              const Text('Update Status',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF374151))),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedStatus,
-                items: _availableStatuses
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setState(() => _selectedStatus = value);
-                },
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: const Color(0xFFF9FAFB),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
+              if (widget.currentStatus == 'Waiting for Parts' &&
+                  widget.partsDecisionStatus != 'decided') ...[
+                _PartsDecisionPanel(
+                  docId: widget.docId,
+                  partsNeededNote: widget.partsNeededNote,
+                  partsDecisionStatus: widget.partsDecisionStatus,
                 ),
-              ),
-              const SizedBox(height: 16),
-
-              if (_scheduleRequired) ...[
-                const Text('Technician Visit Schedule',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF374151))),
-                const SizedBox(height: 6),
-                InkWell(
-                  onTap: _pickSchedule,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.calendar_today_outlined,
-                            size: 18, color: Color(0xFF2563EB)),
-                        const SizedBox(width: 10),
-                        Text(
-                          _scheduledDateTime != null
-                              ? _formatSchedule(_scheduledDateTime!)
-                              : 'Select date and time',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _scheduledDateTime != null
-                                ? const Color(0xFF111827)
-                                : const Color(0xFF9CA3AF),
+                const SizedBox(height: 20),
+              ] else if (widget.currentStatus == 'Waiting for Parts' &&
+                  widget.partsDecisionStatus == 'decided') ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF6EE7B7)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle,
+                          size: 18, color: Color(0xFF059669)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.resolvedPartsSource == 'Customer Supplied'
+                              ? 'Customer decided: they\'ll supply the '
+                                  'part themselves. Move back to "In '
+                                  'Process" once it arrives.'
+                              : 'Customer decided: the shop will supply '
+                                  'the part. Move back to "In Process" '
+                                  'once it\'s sourced.',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: Color(0xFF065F46),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
               ],
 
-              if (_partsSourceRelevant) ...[
-                const Text('Parts Source',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF374151))),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ChoiceChip(
-                        label: const Text('Customer Supplied'),
-                        selected: _partsSource == 'Customer Supplied',
-                        onSelected: (_) => setState(
-                            () => _partsSource = 'Customer Supplied'),
-                        selectedColor: const Color(0xFF2563EB),
-                        backgroundColor: const Color(0xFFF9FAFB),
-                        labelStyle: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _partsSource == 'Customer Supplied'
-                              ? Colors.white
-                              : const Color(0xFF6B7280),
-                        ),
-                        side: BorderSide(
-                          color: _partsSource == 'Customer Supplied'
-                              ? const Color(0xFF2563EB)
-                              : const Color(0xFFE5E7EB),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ChoiceChip(
-                        label: const Text('Shop Supplied'),
-                        selected: _partsSource == 'Shop Supplied',
-                        onSelected: (_) =>
-                            setState(() => _partsSource = 'Shop Supplied'),
-                        selectedColor: const Color(0xFF2563EB),
-                        backgroundColor: const Color(0xFFF9FAFB),
-                        labelStyle: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _partsSource == 'Shop Supplied'
-                              ? Colors.white
-                              : const Color(0xFF6B7280),
-                        ),
-                        side: BorderSide(
-                          color: _partsSource == 'Shop Supplied'
-                              ? const Color(0xFF2563EB)
-                              : const Color(0xFFE5E7EB),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 420;
 
-              if (_warrantyRelevant) ...[
-                const Text('Warranty Period',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF374151))),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [1, 2, 3].map((months) {
-                    final isSelected = _warrantyMonths == months;
-                    return ChoiceChip(
-                      label: Text(months == 1 ? '1 Month' : '$months Month'),
-                      selected: isSelected,
-                      onSelected: (_) =>
-                          setState(() => _warrantyMonths = months),
-                      selectedColor: const Color(0xFF166534),
-                      backgroundColor: const Color(0xFFF9FAFB),
-                      labelStyle: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected
-                            ? Colors.white
-                            : const Color(0xFF6B7280),
-                      ),
-                      side: BorderSide(
-                        color: isSelected
-                            ? const Color(0xFF166534)
-                            : const Color(0xFFE5E7EB),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-                const Text('Warranty Terms',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF374151))),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _warrantyTermsController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'What does this warranty cover?',
-                    filled: true,
-                    fillColor: const Color(0xFFF9FAFB),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
+                  final techOwnsThisStage = widget.currentTechnician != null &&
+                      const {
+                        'In Shop',
+                        'In Home',
+                        'Queued',
+                        'In Process',
+                        'Waiting for Parts',
+                      }.contains(widget.currentStatus);
 
-              const Text('Assigned Technician',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF374151))),
-              const SizedBox(height: 6),
-              _buildTechnicianField(),
-              const SizedBox(height: 16),
-
-              Text(
-                _selectedStatus == 'Completed'
-                    ? 'Notes / Remarks (Required)'
-                    : _noteRequired
-                        ? 'Notes / Remarks (Required)'
-                        : 'Notes / Remarks (Optional — template message included)',
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF374151)),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _noteController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: _selectedStatus == 'Completed'
-                      ? 'Put details on what is being repaired on the appliance.'
-                      : _noteRequired
-                          ? 'Provide details on the delay or the expected '
-                              'arrival of the part.'
-                          : 'Optional — additional details to add to the '
-                              'template message',
-                  filled: true,
-                  fillColor: const Color(0xFFF9FAFB),
-                  contentPadding: const EdgeInsets.all(12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              const Text('Appliance Photo (Optional)',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF374151))),
-              const SizedBox(height: 6),
-              if (_selectedImage != null)
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        _selectedImage!,
-                        height: 140,
+                  final leftFields = <Widget>[
+                    if (techOwnsThisStage) ...[
+                      Container(
                         width: double.infinity,
-                        fit: BoxFit.cover,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.info_outline,
+                                size: 16, color: Color(0xFF1D4ED8)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${widget.currentTechnician} usually moves '
+                                'this forward from their own app. Only '
+                                'change it below if you need to override.',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedImage = null),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.close,
-                              color: Colors.white, size: 16),
+                      const SizedBox(height: 12),
+                    ],
+                    const Text('Update Status',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF374151))),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedStatus,
+                      items: _availableStatuses
+                          .map((s) =>
+                              DropdownMenuItem(value: s, child: Text(s)))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedStatus = value);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFF9FAFB),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide:
+                              const BorderSide(color: Color(0xFFE5E7EB)),
                         ),
                       ),
                     ),
-                  ],
-                )
-              else
-                InkWell(
-                  onTap: _pickPhoto,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: const Column(
-                      children: [
-                        Icon(Icons.add_a_photo_outlined,
-                            color: Color(0xFF9CA3AF), size: 24),
-                        SizedBox(height: 6),
-                        Text(
-                          'Tap to add a photo',
+                    const SizedBox(height: 12),
+                    if (_scheduleRequired) ...[
+                      const Text('Technician Visit Schedule',
                           style: TextStyle(
-                              fontSize: 12, color: Color(0xFF9CA3AF)),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151))),
+                      const SizedBox(height: 6),
+                      InkWell(
+                        onTap: _pickSchedule,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                Border.all(color: const Color(0xFFE5E7EB)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today_outlined,
+                                  size: 18, color: Color(0xFF2563EB)),
+                              const SizedBox(width: 10),
+                              Text(
+                                _scheduledDateTime != null
+                                    ? _formatSchedule(_scheduledDateTime!)
+                                    : 'Select date and time',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _scheduledDateTime != null
+                                      ? const Color(0xFF111827)
+                                      : const Color(0xFF9CA3AF),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_partsSourceRelevant) ...[
+                      const Text('Parts Source',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151))),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Customer Supplied'),
+                            selected: _partsSource == 'Customer Supplied',
+                            onSelected: (_) => setState(
+                                () => _partsSource = 'Customer Supplied'),
+                            selectedColor: const Color(0xFF2563EB),
+                            backgroundColor: const Color(0xFFF9FAFB),
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _partsSource == 'Customer Supplied'
+                                  ? Colors.white
+                                  : const Color(0xFF6B7280),
+                            ),
+                            side: BorderSide(
+                              color: _partsSource == 'Customer Supplied'
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFFE5E7EB),
+                            ),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Shop Supplied'),
+                            selected: _partsSource == 'Shop Supplied',
+                            onSelected: (_) => setState(
+                                () => _partsSource = 'Shop Supplied'),
+                            selectedColor: const Color(0xFF2563EB),
+                            backgroundColor: const Color(0xFFF9FAFB),
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _partsSource == 'Shop Supplied'
+                                  ? Colors.white
+                                  : const Color(0xFF6B7280),
+                            ),
+                            side: BorderSide(
+                              color: _partsSource == 'Shop Supplied'
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFFE5E7EB),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_warrantyRelevant) ...[
+                      const Text('Warranty Period',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151))),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [1, 2, 3].map((months) {
+                          final isSelected = _warrantyMonths == months;
+                          return ChoiceChip(
+                            label: Text(
+                                months == 1 ? '1 Month' : '$months Month'),
+                            selected: isSelected,
+                            onSelected: (_) =>
+                                setState(() => _warrantyMonths = months),
+                            selectedColor: const Color(0xFF166534),
+                            backgroundColor: const Color(0xFFF9FAFB),
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected
+                                  ? Colors.white
+                                  : const Color(0xFF6B7280),
+                            ),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? const Color(0xFF166534)
+                                  : const Color(0xFFE5E7EB),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text('Warranty Terms',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151))),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _warrantyTermsController,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          hintText: 'What does this warranty cover?',
+                          filled: true,
+                          fillColor: const Color(0xFFF9FAFB),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFE5E7EB)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    const Text('Assigned Technician',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF374151))),
+                    const SizedBox(height: 6),
+                    _TechnicianPickerField(
+                      initialTechnician: _selectedTechnician,
+                      onChanged: (name, id) {
+                        _selectedTechnician = name;
+                        _selectedTechnicianId = id;
+                      },
                     ),
-                  ),
-                ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _selectedStatus == 'Completed'
+                          ? 'Notes / Remarks (Required)'
+                          : _noteRequired
+                              ? 'Notes / Remarks (Required)'
+                              : 'Notes / Remarks (Optional — template '
+                                  'message included)',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF374151)),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _noteController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: _selectedStatus == 'Completed'
+                            ? 'Put details on what is being repaired on '
+                                'the appliance.'
+                            : _noteRequired
+                                ? 'Provide details on the delay or the '
+                                    'expected arrival of the part.'
+                                : 'Optional — additional details to add '
+                                    'to the template message',
+                        filled: true,
+                        fillColor: const Color(0xFFF9FAFB),
+                        contentPadding: const EdgeInsets.all(12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide:
+                              const BorderSide(color: Color(0xFFE5E7EB)),
+                        ),
+                      ),
+                    ),
+                  ];
+
+                  final photoField = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Appliance Photo (Optional)',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151))),
+                      const SizedBox(height: 6),
+                      if (_selectedImage != null)
+                        Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                _selectedImage!,
+                                height: isWide ? 220 : 140,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: GestureDetector(
+                                onTap: () =>
+                                    setState(() => _selectedImage = null),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black54,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close,
+                                      color: Colors.white, size: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        InkWell(
+                          onTap: _pickPhoto,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: double.infinity,
+                            height: isWide ? 220 : null,
+                            padding: EdgeInsets.symmetric(
+                                vertical: isWide ? 0 : 20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(8),
+                              border:
+                                  Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.add_a_photo_outlined,
+                                    color: Color(0xFF9CA3AF), size: 24),
+                                SizedBox(height: 6),
+                                Text(
+                                  'Tap to add a photo',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF9CA3AF)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+
+                  if (isWide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: leftFields,
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        Expanded(flex: 2, child: photoField),
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ...leftFields,
+                      const SizedBox(height: 14),
+                      photoField,
+                    ],
+                  );
+                },
+              ),
               const SizedBox(height: 20),
 
               SizedBox(
@@ -1131,14 +1600,6 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   }
 }
 
-// =====================================================================
-// Repair request review modal.
-// Opens for pending requests.
-// Supports accepting or declining a request.
-// Displays customer and repair details.
-// Includes the request photo when available.
-// Uses data passed from the review sheet opener.
-// =====================================================================
 class _ReviewRequestSheet extends StatefulWidget {
   final String docId;
   final String trackingId;
@@ -1169,6 +1630,8 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
   final SmsService _smsService = SmsService();
   final TextEditingController _noteController = TextEditingController();
   bool _isSubmitting = false;
+  String? _selectedTechnician;
+  String? _selectedTechnicianId;
 
   @override
   void dispose() {
@@ -1176,14 +1639,24 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
     super.dispose();
   }
 
-// Updates a request to Accepted or Declined.
-// A decline requires a reason.
-// Saves the new status and notifies the customer.
   Future<void> _decide(String newStatus) async {
     if (newStatus == 'Declined' && _noteController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Enter a reason for declining.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Accept now assigns a technician in the same step — no more
+    // separate "Requests" then "Assign" trip. The job goes straight
+    // into that technician's queue as soon as it's accepted.
+    if (newStatus == 'Accepted' && _selectedTechnician == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a technician to assign this job to.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1198,6 +1671,10 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
         trackingId: widget.trackingId,
         newStatus: newStatus,
         note: _noteController.text,
+        assignedTechnician:
+            newStatus == 'Accepted' ? _selectedTechnician : null,
+        assignedTechnicianUid:
+            newStatus == 'Accepted' ? _selectedTechnicianId : null,
       );
 
       final shopInfoDoc = await FirebaseFirestore.instance
@@ -1213,7 +1690,37 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
         applianceType: widget.applianceType,
         newStatus: newStatus,
         note: _noteController.text,
+        technician: newStatus == 'Accepted' ? _selectedTechnician : null,
       );
+
+      // Best-effort alert to the assigned technician — phoneNumber is
+      // an optional field on their technicians/ doc, so this is
+      // skipped quietly (not an error) when it isn't on file, and a
+      // failure here never blocks the acceptance itself from saving.
+      if (newStatus == 'Accepted' && _selectedTechnicianId != null) {
+        try {
+          final techDoc = await FirebaseFirestore.instance
+              .collection('technicians')
+              .doc(_selectedTechnicianId)
+              .get();
+          final techPhone = techDoc.data()?['phoneNumber'] as String? ?? '';
+          await _smsService.sendJobAssignedSms(
+            technicianPhoneNumber: techPhone,
+            technicianName: _selectedTechnician ?? '',
+            trackingId: widget.trackingId,
+            applianceType: widget.applianceType,
+          );
+          await _firestoreService.createNotification(
+            recipientType: 'technician',
+            recipientId: _selectedTechnicianId,
+            title: 'New job assigned',
+            body: '${widget.applianceType} (ID: ${widget.trackingId})',
+            trackingId: widget.trackingId,
+          );
+        } catch (_) {
+          // Non-fatal — the assignment itself already saved successfully.
+        }
+      }
 
       if (mounted) {
         Navigator.pop(context);
@@ -1221,7 +1728,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
           SnackBar(
             content: Text(
               newStatus == 'Accepted'
-                  ? 'Request accepted and customer notified.'
+                  ? 'Request accepted, assigned to $_selectedTechnician, and customer notified.'
                   : 'Request declined and customer notified.',
             ),
             backgroundColor: newStatus == 'Accepted'
@@ -1281,9 +1788,16 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 30,
+              offset: const Offset(0, 12),
+            ),
+          ],
         ),
         padding: const EdgeInsets.all(20),
         child: SingleChildScrollView(
@@ -1291,18 +1805,8 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5E7EB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1317,6 +1821,15 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF92400E)),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    customBorder: const CircleBorder(),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close,
+                          size: 20, color: Color(0xFF6B7280)),
                     ),
                   ),
                 ],
@@ -1406,6 +1919,27 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
               ),
 
               const SizedBox(height: 16),
+              const Text('Assign Technician',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF374151))),
+              const SizedBox(height: 4),
+              const Text(
+                'Required to accept — the job goes straight into their '
+                'queue.',
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 6),
+              _TechnicianPickerField(
+                initialTechnician: _selectedTechnician,
+                onChanged: (name, id) {
+                  _selectedTechnician = name;
+                  _selectedTechnicianId = id;
+                },
+              ),
+
+              const SizedBox(height: 16),
               const Text('Remarks',
                   style: TextStyle(
                       fontSize: 13,
@@ -1482,11 +2016,6 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
   }
 }
 
-// QR code dialog.
-// Displays the generated repair QR code.
-// Encodes the tracking ID as a deep link.
-// QR details are retrieved from Firestore.
-// The QR does not need regeneration after status updates.
 class _QrCodeDialog extends StatefulWidget {
   final String trackingId;
   final String customerName;
@@ -1591,88 +2120,47 @@ class _QrCodeDialogState extends State<_QrCodeDialog> {
               style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
-
-            Container(
+            const SizedBox(height: 20),
+            SizedBox(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF9FAFB),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _qrData,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: Color(0xFF374151),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy, size: 16),
-                    color: const Color(0xFF6B7280),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Copy',
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _qrData));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('QR data copied to clipboard.'),
-                          duration: Duration(seconds: 1),
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : _downloadQr,
+                icon: _isSaving
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
                         ),
-                      );
-                    },
+                      )
+                    : const Icon(Icons.download, size: 18),
+                label: const Text('Download'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Text('Close'),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF374151),
+                  side: const BorderSide(color: Color(0xFFD1D5DB)),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isSaving ? null : _downloadQr,
-                    icon: _isSaving
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Icon(Icons.download, size: 18),
-                    label: const Text('Download'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2563EB),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                child: const Text('Cancel'),
+              ),
             ),
           ],
         ),

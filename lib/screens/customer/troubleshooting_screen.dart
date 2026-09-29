@@ -1,14 +1,15 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 //import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import '../../utils/troubleshooting_data.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 import 'main_nav_screen.dart';
 
-/// "Basic Troubleshooting" — walks the customer through a few quick
-/// checks for their chosen appliance before letting them submit an
-/// actual repair request. Shown right after RepairRequestScreen.
 class TroubleshootingScreen extends StatefulWidget {
   final Map<String, dynamic> repairData;
   const TroubleshootingScreen({super.key, required this.repairData});
@@ -38,57 +39,68 @@ class _TroubleshootingScreenState extends State<TroubleshootingScreen> {
     }
   }
 
-  // Shows the "Great News!" success dialog when the customer says
-  // the current step already fixed the issue.
+ 
   void _markResolved() {
-    showDialog(
+    showGeneralDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _ResolvedDialog(
-        onBackToHome: () {
-          Navigator.pop(ctx);
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const MainNavScreen()),
-            (route) => false,
-          );
-        },
-      ),
+      barrierLabel: 'Great News',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, anim1, anim2) => const SizedBox.shrink(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: 6 * anim1.value,
+            sigmaY: 6 * anim1.value,
+          ),
+          child: FadeTransition(
+            opacity: anim1,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.94, end: 1.0).animate(
+                CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+              ),
+              child: _ResolvedDialog(
+                onBackToHome: () {
+                  Navigator.pop(context);
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MainNavScreen()),
+                    (route) => false,
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
   // Confirmation dialog shown after all troubleshooting steps are done,
   // asking whether to actually file the repair request.
   void _showSubmitConfirmation() {
-    showDialog(
+    showAppDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Submit Repair Request?'),
-        content: const Text(
-          'We\'ve gone through all the troubleshooting steps. Would you like to submit a repair request? You will receive an SMS with a tracking link.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFF6B7280))),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _submitRequest();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Yes, Submit',
-                style: TextStyle(color: Colors.white)),
-          ),
-        ],
+      title: 'Submit Repair Request?',
+      content: const Text(
+        'We\'ve gone through all the troubleshooting steps. Would you like to submit a repair request? You will receive an SMS with a tracking link.',
+        style: TextStyle(fontSize: AppColors.fontLabel, color: AppColors.textGray),
       ),
+      actions: [
+        AppDialogAction(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context),
+        ),
+        AppDialogAction(
+          label: 'Yes, Submit',
+          isPrimary: true,
+          onPressed: () {
+            Navigator.pop(context);
+            _submitRequest();
+          },
+        ),
+      ],
     );
   }
 
@@ -112,6 +124,11 @@ class _TroubleshootingScreenState extends State<TroubleshootingScreen> {
         'status': 'Pending',
         'createdAt': FieldValue.serverTimestamp(),
       };
+
+      final model = widget.repairData['applianceModel'];
+      if (model != null && (model as String).trim().isNotEmpty) {
+        docData['applianceModel'] = model.trim();
+      }
       if (widget.repairData['photoUrl'] != null) {
         docData['initialPhotoUrl'] = widget.repairData['photoUrl'];
       }
@@ -142,18 +159,20 @@ print('=============================');
         //},
       //);
 
+      if (!mounted) return;
       setState(() {
         _isSubmitting = false;
         _isSubmitted = true;
         _trackingId = trackingId;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSubmitting = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text(friendlyErrorMessage(e)),
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -163,23 +182,24 @@ print('=============================');
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: _isSubmitted
-            ? _buildSubmittedScreen()
-            : _buildTroubleshootingStep(),
+        child: _isSubmitting
+            ? const AppLoadingIndicator(message: 'Submitting your request...')
+            : (_isSubmitted
+                ? _buildSubmittedScreen()
+                : _buildTroubleshootingStep()),
       ),
     );
   }
 
-  // ── Header (shared black card used by the step screen) ──
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.black,
+        gradient: AppColors.darkGradient,
         borderRadius: BorderRadius.circular(16),
       ),
       child: const Column(
@@ -188,7 +208,7 @@ print('=============================');
           Text(
             'Basic Troubleshooting',
             style: TextStyle(
-              fontSize: 22,
+              fontSize: AppColors.fontTitle,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
@@ -196,17 +216,16 @@ print('=============================');
           SizedBox(height: 4),
           Text(
             'Quick checks before we proceed with your request',
-            style: TextStyle(fontSize: 12, color: Colors.white70),
+            style: TextStyle(fontSize: AppColors.fontCaption, color: Colors.white70),
           ),
         ],
       ),
     );
   }
 
-  // ── Troubleshooting Steps ──
+  // Troubleshooting Steps
   Widget _buildTroubleshootingStep() {
     final step = _steps[_currentStep];
-    final progress = (_currentStep + 1) / _steps.length;
 
     return SingleChildScrollView(
       child: Column(
@@ -225,14 +244,14 @@ print('=============================');
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB),
+                        color: AppColors.dark,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         widget.repairData['applianceType'],
                         style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 13,
+                            fontSize: AppColors.fontLabel,
                             fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -240,13 +259,23 @@ print('=============================');
                     Text(
                       'Step ${_currentStep + 1} of ${_steps.length}',
                       style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF6B7280)),
+                          fontSize: AppColors.fontCaption, color: AppColors.textGray),
                     ),
                   ],
                 ),
+                if ((widget.repairData['applianceModel'] as String?)
+                        ?.trim()
+                        .isNotEmpty ==
+                    true) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Model: ${widget.repairData['applianceModel']}',
+                    style: const TextStyle(
+                        fontSize: AppColors.fontCaption, color: AppColors.textGray),
+                  ),
+                ],
                 const SizedBox(height: 12),
 
-                // Segmented progress bar — one filled block per step reached
                 Row(
                   children: List.generate(_steps.length, (i) {
                     final filled = i <= _currentStep;
@@ -257,7 +286,7 @@ print('=============================');
                             right: i == _steps.length - 1 ? 0 : 4),
                         decoration: BoxDecoration(
                           color: filled
-                              ? Colors.black
+                              ? AppColors.dark
                               : const Color(0xFFE5E7EB),
                           borderRadius: BorderRadius.circular(3),
                         ),
@@ -283,14 +312,14 @@ print('=============================');
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.black,
+                          color: AppColors.dark,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           'Step ${_currentStep + 1}',
                           style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 12,
+                              fontSize: AppColors.fontCaption,
                               fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -298,16 +327,16 @@ print('=============================');
                       Text(
                         step.title,
                         style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: AppColors.fontTitle,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black),
+                            color: AppColors.textDark),
                       ),
                       const SizedBox(height: 12),
                       Text(
                         step.description,
                         style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF4B5563),
+                            fontSize: AppColors.fontBody,
+                            color: AppColors.textGray,
                             height: 1.6),
                       ),
                     ],
@@ -318,9 +347,9 @@ print('=============================');
                 const Text(
                   'This step resolve your issue?',
                   style: TextStyle(
-                      fontSize: 16,
+                      fontSize: AppColors.fontBody,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black),
+                      color: AppColors.textDark),
                 ),
                 const SizedBox(height: 12),
 
@@ -334,12 +363,12 @@ print('=============================');
                     label: const Text(
                       'Yes, issue resolved!',
                       style: TextStyle(
-                          fontSize: 15,
+                          fontSize: AppColors.fontLabel,
                           fontWeight: FontWeight.w600,
                           color: Colors.white),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF16A34A),
+                      backgroundColor: AppColors.success,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -355,20 +384,20 @@ print('=============================');
                     onPressed: _nextStep,
                     icon: Icon(
                       _isLastStep ? Icons.send : Icons.arrow_forward,
-                      color: const Color(0xFF2563EB),
+                      color: AppColors.primary,
                     ),
                     label: Text(
                       _isLastStep
                           ? 'No, Submit repair request'
                           : 'No, Try next Step!',
                       style: const TextStyle(
-                          fontSize: 15,
+                          fontSize: AppColors.fontLabel,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF2563EB)),
+                          color: AppColors.primary),
                     ),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+                      side: const BorderSide(color: AppColors.primary, width: 1.5),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -383,7 +412,19 @@ print('=============================');
     );
   }
 
-  // ── Submitted Screen ──
+  // Submitted Screen
+  void _copyTrackingId(BuildContext context) {
+    if (_trackingId == null) return;
+    Clipboard.setData(ClipboardData(text: _trackingId!));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Tracking ID copied!'),
+        backgroundColor: AppColors.success,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   Widget _buildSubmittedScreen() {
     return Center(
       child: Padding(
@@ -396,18 +437,18 @@ print('=============================');
               height: 90,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF2563EB), width: 2),
+                border: Border.all(color: AppColors.dark, width: 2),
               ),
               child: const Icon(Icons.check,
-                  color: Color(0xFF2563EB), size: 48),
+                  color: AppColors.dark, size: 48),
             ),
             const SizedBox(height: 24),
             const Text(
               'Request Submitted!',
               style: TextStyle(
-                  fontSize: 24,
+                  fontSize: AppColors.fontTitle,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black),
+                  color: AppColors.textDark),
             ),
             const SizedBox(height: 20),
 
@@ -423,15 +464,38 @@ print('=============================');
                 children: [
                   const Text('Your tracking ID',
                       style: TextStyle(
-                          fontSize: 12, color: Color(0xFF6B7280))),
+                          fontSize: AppColors.fontCaption, color: AppColors.textGray)),
                   const SizedBox(height: 6),
-                  Text(
-                    _trackingId ?? '',
-                    style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF4338CA),
-                        letterSpacing: 3),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _trackingId ?? '',
+                        style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF4338CA),
+                            letterSpacing: 3),
+                      ),
+                      const SizedBox(width: 8),
+                      // Copy button — para madaling i-share/i-save ng
+                      // customer ang tracking ID sa ibang app (hal.
+                      // Messenger, Notes) nang hindi mag-tatype manually.
+                      GestureDetector(
+                        onTap: () => _copyTrackingId(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: const Color(0xFFD1D5DB)),
+                          ),
+                          child: const Icon(Icons.copy,
+                              size: 16, color: Color(0xFF4338CA)),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -440,7 +504,7 @@ print('=============================');
             const Text(
               'We\'ve sent an SMS to your contact number with a link to track your repair status in real time.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              style: TextStyle(fontSize: AppColors.fontLabel, color: AppColors.textGray),
             ),
             const SizedBox(height: 28),
             SizedBox(
@@ -455,12 +519,12 @@ print('=============================');
                 label: const Text(
                   'Back to Home',
                   style: TextStyle(
-                      fontSize: 15,
+                      fontSize: AppColors.fontLabel,
                       fontWeight: FontWeight.w600,
                       color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: AppColors.dark,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -474,45 +538,58 @@ print('=============================');
   }
 }
 
-/// "Great News!" pop-up dialog shown when a troubleshooting step
-/// already resolves the customer's issue (no repair request needed).
 class _ResolvedDialog extends StatelessWidget {
   final VoidCallback onBackToHome;
   const _ResolvedDialog({required this.onBackToHome});
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxWidth: 400),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
             Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF16A34A), width: 2),
+                border: Border.all(color: AppColors.success, width: 2),
               ),
               child: const Icon(Icons.check,
-                  color: Color(0xFF16A34A), size: 32),
+                  color: AppColors.success, size: 32),
             ),
             const SizedBox(height: 16),
             const Text(
               'Great News !',
               style: TextStyle(
-                  fontSize: 20,
+                  fontSize: AppColors.fontTitle,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black),
+                  color: AppColors.textDark),
             ),
             const SizedBox(height: 8),
             const Text(
               'Your issue has been resolved, no repair needed. If the same problem comes back, feel free to submit another repair request.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              style: TextStyle(fontSize: AppColors.fontLabel, color: AppColors.textGray),
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -523,12 +600,12 @@ class _ResolvedDialog extends StatelessWidget {
                 label: const Text(
                   'Back to Home',
                   style: TextStyle(
-                      fontSize: 14,
+                      fontSize: AppColors.fontLabel,
                       fontWeight: FontWeight.w600,
                       color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: AppColors.dark,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
@@ -536,6 +613,8 @@ class _ResolvedDialog extends StatelessWidget {
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );

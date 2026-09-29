@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
+import '../../utils/constants.dart';
+import '../../services/firestore_service.dart';
+import '../../services/sms_service.dart';
 
-/// "Repair Tracking Detail" — shows one repair request's full status
-/// timeline, technician notes per step, and submitted photo. Reached
-/// from a tap on any request row (My Repair list or Repair History).
 class TrackingScreen extends StatelessWidget {
   final String trackingId;
   const TrackingScreen({super.key, required this.trackingId});
@@ -11,11 +13,13 @@ class TrackingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Track Repair'),
+        title: const Text('Track Repair',
+            style: TextStyle(
+                color: AppColors.textDark, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        foregroundColor: AppColors.textDark,
         elevation: 0,
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -26,52 +30,37 @@ class TrackingScreen extends StatelessWidget {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppLoadingIndicator(
+                message: 'Loading repair details...');
+          }
+
+          if (snapshot.hasError) {
+            return AppErrorState(
+                message: friendlyErrorMessage(snapshot.error));
           }
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return _buildNotFound();
           }
 
-          final data =
-              snapshot.data!.docs.first.data() as Map<String, dynamic>;
-          return _buildTrackingContent(data);
+          final doc = snapshot.data!.docs.first;
+          final data = doc.data() as Map<String, dynamic>;
+          return _buildTrackingContent(context, doc.id, data);
         },
       ),
     );
   }
 
-  // Empty state shown when no request matches this tracking ID.
   Widget _buildNotFound() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 16),
-            const Text(
-              'Tracking ID not found',
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'No repair request found for tracking ID: $trackingId',
-              textAlign: TextAlign.center,
-              style:
-                  const TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
-            ),
-          ],
-        ),
-      ),
+    return AppEmptyState(
+      icon: Icons.search_off,
+      title: 'Tracking ID not found',
+      subtitle: 'No repair request found for tracking ID: $trackingId',
     );
   }
 
-  Widget _buildTrackingContent(Map<String, dynamic> data) {
+  Widget _buildTrackingContent(
+      BuildContext context, String docId, Map<String, dynamic> data) {
     final status = data['status'] ?? 'Pending';
     final allStatuses = [
       'Pending',
@@ -82,12 +71,9 @@ class TrackingScreen extends StatelessWidget {
       'Waiting for Parts',
       'Complete',
     ];
-    // Firestore stores the final status as 'Completed'; the timeline
-    // label uses 'Complete' to match the mockup, so map it here.
     final normalizedStatus = status == 'Completed' ? 'Complete' : status;
     final currentIndex = allStatuses.indexOf(normalizedStatus);
 
-    // Per-step notes/dates keyed by status label, pulled from statusHistory.
     final stepInfo = _buildStepInfo(data);
 
     return SingleChildScrollView(
@@ -95,12 +81,11 @@ class TrackingScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Tracking ID header card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF9CA3AF),
+              gradient: AppColors.darkGradient,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
@@ -108,7 +93,8 @@ class TrackingScreen extends StatelessWidget {
               children: [
                 const Text(
                   'Tracking ID:',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(
+                      color: Colors.white70, fontSize: AppColors.fontLabel),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -126,20 +112,24 @@ class TrackingScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Repair details card (name, contact, address, appliance, problem, photo)
-          _buildInfoCard(data),
+          if (data['partsDecisionStatus'] ==
+              AppConstants.partsDecisionAwaitingCustomer) ...[
+            _CustomerPartsDecisionPanel(docId: docId, data: data),
+            const SizedBox(height: 20),
+          ],
+
+          _buildInfoCard(context, data),
           const SizedBox(height: 20),
 
           const Text(
             'Repair Status:',
             style: TextStyle(
-                fontSize: 17,
+                fontSize: AppColors.fontTitle,
                 fontWeight: FontWeight.bold,
-                color: Colors.black),
+                color: AppColors.textDark),
           ),
           const SizedBox(height: 12),
 
-          // Vertical timeline: one row per status, each with an optional note.
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -165,12 +155,12 @@ class TrackingScreen extends StatelessWidget {
                           height: 26,
                           decoration: BoxDecoration(
                             color: isCompleted
-                                ? const Color(0xFF2563EB)
+                                ? AppColors.dark
                                 : Colors.white,
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: isCompleted
-                                  ? const Color(0xFF2563EB)
+                                  ? AppColors.dark
                                   : const Color(0xFFD1D5DB),
                               width: 1.5,
                             ),
@@ -182,8 +172,8 @@ class TrackingScreen extends StatelessWidget {
                                 : Text(
                                     '${index + 1}',
                                     style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF9CA3AF),
+                                        fontSize: AppColors.fontCaption,
+                                        color: AppColors.textLightGray,
                                         fontWeight: FontWeight.bold),
                                   ),
                           ),
@@ -193,61 +183,98 @@ class TrackingScreen extends StatelessWidget {
                             width: 2,
                             height: 40,
                             color: index < currentIndex
-                                ? const Color(0xFF2563EB)
+                                ? AppColors.dark
                                 : const Color(0xFFE5E7EB),
                           ),
                       ],
                     ),
                     const SizedBox(width: 16),
 
-                    // Step label + date/note + "Current status" tag
+                    // Step label + date + "Current status" tag, tapos
+                    // vertical divider, tapos "Note:" column sa kanan.
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 32),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    allStatuses[index],
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: isCurrent
-                                          ? FontWeight.bold
-                                          : FontWeight.w500,
-                                      color: isCompleted
-                                          ? Colors.black
-                                          : const Color(0xFF9CA3AF),
-                                    ),
-                                  ),
-                                  if (info?.date != null)
+                        child: IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Left column — status label, date, tag.
+                              Expanded(
+                                flex: 3,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
                                     Text(
-                                      info!.date!,
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Color(0xFF9CA3AF)),
-                                    ),
-                                  if (isCurrent)
-                                    const Text(
-                                      'Current status',
+                                      allStatuses[index],
                                       style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF2563EB)),
+                                        fontSize: AppColors.fontLabel,
+                                        fontWeight: isCurrent
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: isCompleted
+                                            ? AppColors.textDark
+                                            : AppColors.textLightGray,
+                                      ),
                                     ),
-                                ],
+                                    if (info?.date != null)
+                                      Text(
+                                        info!.date!,
+                                        style: const TextStyle(
+                                            fontSize: AppColors.fontCaption,
+                                            color: AppColors.textLightGray),
+                                      ),
+                                    if (isCurrent)
+                                      const Text(
+                                        'Current status',
+                                        style: TextStyle(
+                                            fontSize: AppColors.fontCaption,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.dark),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            // Right-aligned note label for this step
-                            Text(
-                              info?.note ?? 'Note:',
-                              style: const TextStyle(
-                                  fontSize: 12, color: Color(0xFF9CA3AF)),
-                            ),
-                          ],
+                              // Vertical divider between status info and note.
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12),
+                                child: VerticalDivider(
+                                  width: 1,
+                                  thickness: 1,
+                                  color: Color(0xFFE5E7EB),
+                                ),
+                              ),
+                              
+                              Expanded(
+                                flex: 2,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Note:',
+                                      style: TextStyle(
+                                          fontSize: AppColors.fontCaption,
+                                          color: AppColors.textLightGray),
+                                    ),
+                                    if (info?.note != null)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          info!.note!,
+                                          softWrap: true,
+                                          style: const TextStyle(
+                                              fontSize: AppColors.fontCaption,
+                                              color: AppColors.textGray),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -261,8 +288,6 @@ class TrackingScreen extends StatelessWidget {
     );
   }
 
-  // Builds a lookup of status -> {date, note} from the request's
-  // statusHistory entries, so each timeline row can show its own note.
   Map<String, _StepInfo> _buildStepInfo(Map<String, dynamic> data) {
     final result = <String, _StepInfo>{};
     final history = data['statusHistory'] as List<dynamic>? ?? [];
@@ -285,7 +310,7 @@ class TrackingScreen extends StatelessWidget {
     return result;
   }
 
-  Widget _buildInfoCard(Map<String, dynamic> data) {
+  Widget _buildInfoCard(BuildContext context, Map<String, dynamic> data) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -300,9 +325,9 @@ class TrackingScreen extends StatelessWidget {
           const Text(
             'Repair Details:',
             style: TextStyle(
-                fontSize: 17,
+                fontSize: AppColors.fontTitle,
                 fontWeight: FontWeight.bold,
-                color: Colors.black),
+                color: AppColors.textDark),
           ),
           const SizedBox(height: 12),
           const Divider(),
@@ -322,39 +347,76 @@ class TrackingScreen extends StatelessWidget {
             const Text(
               'Submitted Photo:',
               style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppColors.fontCaption,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF6B7280)),
+                  color: AppColors.textGray),
             ),
             const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                data['initialPhotoUrl'],
-                width: double.infinity,
-                height: 160,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    height: 160,
-                    alignment: Alignment.center,
-                    child: const CircularProgressIndicator(strokeWidth: 2),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 100,
-                  alignment: Alignment.center,
-                  color: const Color(0xFFF3F4F6),
-                  child: const Text(
-                    'Failed to load photo',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+            GestureDetector(
+              onTap: () => _openPhotoViewer(
+                  context, data['initialPhotoUrl'] as String),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      data['initialPhotoUrl'],
+                      width: double.infinity,
+                      height: 160,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          height: 160,
+                          alignment: Alignment.center,
+                          child: const CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.dark),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) =>
+                          Container(
+                        height: 100,
+                        alignment: Alignment.center,
+                        color: const Color(0xFFF3F4F6),
+                        child: const Text(
+                          'Failed to load photo',
+                          style: TextStyle(
+                              fontSize: AppColors.fontCaption,
+                              color: AppColors.textGray),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  // Tap-to-zoom hint — malinaw sa customer na pwedeng
+                  // i-tap ang photo para makita nang mas malapitan.
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.zoom_in,
+                          color: Colors.white, size: 18),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _openPhotoViewer(BuildContext context, String photoUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _PhotoViewerScreen(photoUrl: photoUrl),
+        fullscreenDialog: true,
       ),
     );
   }
@@ -365,23 +427,23 @@ class TrackingScreen extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF6B7280)),
+          Icon(icon, size: 16, color: AppColors.textGray),
           const SizedBox(width: 8),
           SizedBox(
             width: 70,
             child: Text(
               label,
               style: const TextStyle(
-                  fontSize: 13, color: Color(0xFF6B7280)),
+                  fontSize: AppColors.fontCaption, color: AppColors.textGray),
             ),
           ),
           Expanded(
             child: Text(
               value,
               style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: AppColors.fontCaption,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black),
+                  color: AppColors.textDark),
             ),
           ),
         ],
@@ -399,7 +461,7 @@ class TrackingScreen extends StatelessWidget {
         textColor = Colors.white;
         break;
       case 'Accepted':
-        bgColor = const Color(0xFF16A34A);
+        bgColor = AppColors.success;
         textColor = Colors.white;
         break;
       case 'In Home':
@@ -412,11 +474,11 @@ class TrackingScreen extends StatelessWidget {
         textColor = Colors.white;
         break;
       case 'Waiting for Parts':
-        bgColor = const Color(0xFF991B1B);
+        bgColor = AppColors.danger;
         textColor = Colors.white;
         break;
       case 'Complete':
-        bgColor = const Color(0xFF16A34A);
+        bgColor = AppColors.success;
         textColor = Colors.white;
         break;
       default:
@@ -445,7 +507,7 @@ class TrackingScreen extends StatelessWidget {
           Text(
             status,
             style: TextStyle(
-                fontSize: 13,
+                fontSize: AppColors.fontLabel,
                 fontWeight: FontWeight.w600,
                 color: textColor),
           ),
@@ -460,4 +522,205 @@ class _StepInfo {
   final String? date;
   final String? note;
   const _StepInfo({this.date, this.note});
+}
+
+/// Full-screen, pinch-to-zoom photo viewer
+class _PhotoViewerScreen extends StatelessWidget {
+  final String photoUrl;
+  const _PhotoViewerScreen({required this.photoUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, size: 28),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.8,
+          maxScale: 4.0,
+          child: Image.network(
+            photoUrl,
+            fit: BoxFit.contain,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const CircularProgressIndicator(color: Colors.white);
+            },
+            errorBuilder: (context, error, stackTrace) => const Text(
+              'Failed to load photo',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomerPartsDecisionPanel extends StatefulWidget {
+  final String docId;
+  final Map<String, dynamic> data;
+
+  const _CustomerPartsDecisionPanel({
+    required this.docId,
+    required this.data,
+  });
+
+  @override
+  State<_CustomerPartsDecisionPanel> createState() =>
+      _CustomerPartsDecisionPanelState();
+}
+
+class _CustomerPartsDecisionPanelState
+    extends State<_CustomerPartsDecisionPanel> {
+  bool _isSubmitting = false;
+
+  Future<void> _choose(String partsSource) async {
+    setState(() => _isSubmitting = true);
+    try {
+      await FirestoreService().submitPartsDecision(
+        docId: widget.docId,
+        partsSource: partsSource,
+      );
+
+      // Best-effort alert to the shop — a customer decision arriving
+      // silently is exactly the gap we're closing here, but a failed
+      // notification shouldn't block the decision itself from saving.
+      try {
+        final shopDoc = await FirebaseFirestore.instance
+            .collection('shopSettings')
+            .doc('config')
+            .get();
+        final shopContactNumber =
+            shopDoc.data()?['contactNumber'] as String? ?? '';
+        if (shopContactNumber.isNotEmpty) {
+          await SmsService().sendPartsDecisionAlertToShop(
+            shopContactNumber: shopContactNumber,
+            trackingId: widget.data['trackingId'] ?? '',
+            applianceType: widget.data['applianceType'] ?? '',
+            partsSource: partsSource,
+            customerName: widget.data['name'] as String?,
+          );
+        }
+      } catch (_) {
+        // Non-fatal — the decision itself already saved successfully.
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Got it — $partsSource.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(friendlyErrorMessage(e)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  String _deadlineLabel() {
+    final deadline = widget.data['partsDecisionDeadline'] as Timestamp?;
+    if (deadline == null) return '';
+    final hoursLeft = deadline.toDate().difference(DateTime.now()).inHours;
+    if (hoursLeft <= 0) return 'Responding soon keeps this with you';
+    return 'Respond within $hoursLeft hour${hoursLeft == 1 ? '' : 's'}, or '
+        'the shop will supply it by default';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final details = widget.data['partsDecisionDetails'] as String? ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.inventory_2_outlined,
+                  size: 18, color: Color(0xFF9A3412)),
+              SizedBox(width: 6),
+              Text('A Part Is Needed',
+                  style: TextStyle(
+                      fontSize: AppColors.fontLabel,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF9A3412))),
+            ],
+          ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(details,
+                style: const TextStyle(
+                    fontSize: AppColors.fontBody,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF7C2D12))),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            'Who should supply it?',
+            style: const TextStyle(
+                fontSize: AppColors.fontCaption, color: Color(0xFF7C2D12)),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isSubmitting
+                      ? null
+                      : () => _choose(AppConstants.partsSourceShop),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF9A3412),
+                    side: const BorderSide(color: Color(0xFF9A3412)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('The Shop Will Supply It'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _isSubmitting
+                      ? null
+                      : () => _choose(AppConstants.partsSourceCustomer),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9A3412),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('I\'ll Supply It'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _deadlineLabel(),
+            style: const TextStyle(
+                fontSize: 11, color: Color(0xFF9A3412)),
+          ),
+        ],
+      ),
+    );
+  }
 }

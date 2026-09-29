@@ -3,10 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
 import '../auth/Welcome_screen.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 
-/// "My Profile" — view/edit screen for the customer's personal info.
-/// Toggles between a read-only view and an editable form via the
-/// pencil icon in the AppBar.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -39,7 +38,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  // Loads the customer's profile fields from Firestore.
   Future<void> _loadProfile() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -63,7 +61,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // Validates and saves the edited fields back to Firestore.
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -88,7 +85,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Profile updated successfully!'),
-            backgroundColor: Color(0xFF16A34A),
+            backgroundColor: AppColors.success,
           ),
         );
       }
@@ -97,48 +94,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text(friendlyErrorMessage(e)),
+            backgroundColor: AppColors.danger,
           ),
         );
       }
     }
   }
 
-  // Discards edits and reloads the saved values.
   void _cancelEdit() {
     setState(() => _isEditing = false);
-    _loadProfile();
+    _loadProfile(); // reset to original values
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
-          'My Profile',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
+        title: const Text('My Profile',
+            style: TextStyle(
+                color: AppColors.textDark, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        foregroundColor: AppColors.textDark,
         elevation: 0,
-        centerTitle: true,
         actions: [
           if (!_isLoading && !_isEditing)
             IconButton(
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(Icons.edit, color: AppColors.textDark),
               tooltip: 'Edit Profile',
               onPressed: () => setState(() => _isEditing = true),
             ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoadingIndicator(message: 'Loading your profile...')
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Form(
@@ -146,21 +136,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Avatar + name/email header
+                    // Avatar + email header
                     Center(
                       child: Column(
                         children: [
                           Container(
-                            width: 88,
-                            height: 88,
+                            width: 96,
+                            height: 96,
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: const Color(0xFFE4E6EB),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                  color: Colors.black87, width: 1.5),
+                                  color: const Color(0xFFD1D5DB), width: 2),
                             ),
-                            child: const Icon(Icons.person_outline,
-                                color: Colors.black87, size: 52),
+                            child: const Icon(Icons.person,
+                                color: Color(0xFF9CA3AF), size: 56),
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -168,27 +158,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ? _nameController.text
                                 : 'Customer',
                             style: const TextStyle(
-                                fontSize: 18,
+                                fontSize: AppColors.fontTitle,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black),
+                                color: AppColors.textDark),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _email,
                             style: const TextStyle(
-                                fontSize: 13, color: Color(0xFF6B7280)),
+                                fontSize: AppColors.fontLabel,
+                                color: AppColors.textGray),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    const Divider(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 28),
 
                     _buildSectionLabel('Personal Information'),
                     const SizedBox(height: 12),
 
-                    _buildLabel('Name'),
+                    _buildLabel('Full Name'),
                     _buildField(
                       controller: _nameController,
                       icon: Icons.person_outline,
@@ -199,7 +188,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 16),
 
                     _buildLabel('Email Address'),
-                    // Email is fixed to the account and cannot be edited here.
                     TextFormField(
                       initialValue: _email,
                       enabled: false,
@@ -210,6 +198,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Email cannot be changed.',
+                      style: TextStyle(
+                          fontSize: AppColors.fontCaption, color: AppColors.textGray),
                     ),
                     const SizedBox(height: 16),
 
@@ -229,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    _buildLabel('Location'),
+                    _buildLabel('Address'),
                     _buildField(
                       controller: _addressController,
                       icon: Icons.location_on_outlined,
@@ -239,7 +233,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Edit mode: Cancel / Save Changes buttons
                     if (_isEditing)
                       Row(
                         children: [
@@ -265,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: ElevatedButton(
                               onPressed: _isSaving ? null : _saveProfile,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
+                                backgroundColor: AppColors.dark,
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
@@ -273,12 +266,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         BorderRadius.circular(10)),
                               ),
                               child: _isSaving
-                                  ? const SizedBox(
-                                      height: 18,
-                                      width: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white))
+                                  ? const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          height: 18,
+                                          width: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white),
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text('Saving...',
+                                            style: TextStyle(
+                                                color: Colors.white)),
+                                      ],
+                                    )
                                   : const Text('Save Changes',
                                       style:
                                           TextStyle(color: Colors.white)),
@@ -287,9 +290,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ],
                       ),
 
-                    // View mode: red-outline Logout button
                     if (!_isEditing) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 24),
                       const Divider(),
                       const SizedBox(height: 16),
                       SizedBox(
@@ -299,14 +301,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           icon: const Icon(Icons.logout,
                               color: Color(0xFFDC2626), size: 18),
                           label: const Text(
-                            'Log Out',
+                            'Logout',
                             style: TextStyle(
                                 color: Color(0xFFDC2626),
                                 fontWeight: FontWeight.w600),
                           ),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            side: const BorderSide(color: Color(0xFFDC2626)),
+                            side: const BorderSide(color: Color(0xFFFECACA)),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                           ),
@@ -320,61 +322,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Confirmation dialog before signing the customer out.
   void _confirmLogout(BuildContext context) {
-    showDialog(
+    showAppDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFF6B7280))),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await AuthService().logout();
-              if (context.mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                  (route) => false,
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Logout',
-                style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+      title: 'Logout',
+      content: const Text('Are you sure you want to logout?',
+          style: TextStyle(fontSize: AppColors.fontLabel, color: AppColors.textGray)),
+      actions: [
+        AppDialogAction(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context),
+        ),
+        AppDialogAction(
+          label: 'Logout',
+          isPrimary: true,
+          isDestructive: true,
+          onPressed: () async {
+            Navigator.pop(context);
+            await AuthService().logout();
+            if (context.mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                (route) => false,
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 
   Widget _buildSectionLabel(String text) => Text(
         text,
         style: const TextStyle(
-            fontSize: 16,
+            fontSize: AppColors.fontBody,
             fontWeight: FontWeight.bold,
-            color: Colors.black),
+            color: AppColors.textDark),
       );
 
   Widget _buildLabel(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(text,
             style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF6B7280))),
+                fontSize: AppColors.fontLabel,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textGray)),
       );
 
-  // Shared text field builder for the editable profile inputs.
   Widget _buildField({
     required TextEditingController controller,
     required IconData icon,

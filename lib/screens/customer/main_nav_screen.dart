@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'my_repair_screen.dart';
 import 'settings_screen.dart';
+import '../../utils/colors.dart';
 
-/// Bottom nav shell ng buong customer app: Home / Repair / Setting.
-/// Ito na ang dinadala pagkatapos mag-login (dating diretso sa
-/// HomeScreen). Ang HomeScreen mismo ay naging "tab content" na lang.
 class MainNavScreen extends StatefulWidget {
   const MainNavScreen({super.key});
 
@@ -35,10 +33,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.black,
+          color: AppColors.dark,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 8,
               offset: const Offset(0, -2),
             ),
@@ -107,7 +105,7 @@ class _NavItem extends StatelessWidget {
               label,
               style: TextStyle(
                 color: color,
-                fontSize: 11,
+                fontSize: AppColors.fontCaption,
                 fontWeight:
                     isSelected ? FontWeight.w600 : FontWeight.normal,
               ),

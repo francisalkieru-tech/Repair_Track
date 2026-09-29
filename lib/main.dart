@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:app_links/app_links.dart';
 import 'firebase_options.dart';
-import 'screens/auth/Welcome_screen.dart';
+import 'screens/auth/auth_gate.dart';
 import 'screens/tracking/tracking_screen.dart';
 import 'screens/tracking/service_history_screen.dart';
 
@@ -106,7 +106,7 @@ class _MyAppState extends State<MyApp> {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF2563EB),
             foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 50),
+            minimumSize: const Size(0, 50),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -130,7 +130,7 @@ class _MyAppState extends State<MyApp> {
           ),
         ),
       ),
-      home: const WelcomeScreen(),
+      home: const AuthGateScreen(),
     );
   }
 }

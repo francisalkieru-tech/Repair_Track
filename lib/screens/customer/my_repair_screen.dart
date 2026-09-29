@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../tracking/tracking_screen.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 
-/// "My Repair" — full list of the customer's repair requests, each
-/// row showing a status dot. Opened from the "Active Repair" card or
-/// "In Process" stat on the Home Screen, and is also the content of
-/// the "Repair" tab in the bottom nav.
 class MyRepairScreen extends StatelessWidget {
   const MyRepairScreen({super.key});
 
-  // Maps an appliance type string to its list icon.
   IconData _iconForAppliance(String? applianceType) {
     switch (applianceType) {
       case 'Refrigerator':
@@ -32,7 +29,6 @@ class MyRepairScreen extends StatelessWidget {
     }
   }
 
-  // Maps a repair status string to its indicator dot color.
   Color _colorForStatus(String? status) {
     switch (status) {
       case 'Pending':
@@ -60,18 +56,18 @@ class MyRepairScreen extends StatelessWidget {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header — solid black card with screen title + subtitle
+            // Header
             Container(
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.black,
+                gradient: AppColors.darkGradient,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Column(
@@ -80,7 +76,7 @@ class MyRepairScreen extends StatelessWidget {
                   Text(
                     'My Repair',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: AppColors.fontTitle,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -88,7 +84,8 @@ class MyRepairScreen extends StatelessWidget {
                   SizedBox(height: 4),
                   Text(
                     'Monitor your repair progress',
-                    style: TextStyle(fontSize: 13, color: Colors.white70),
+                    style: TextStyle(
+                        fontSize: AppColors.fontLabel, color: Colors.white70),
                   ),
                 ],
               ),
@@ -102,19 +99,35 @@ class MyRepairScreen extends StatelessWidget {
                     .where('customerId', isEqualTo: uid)
                     .snapshots(),
                 builder: (context, snapshot) {
+                  // Loading  shared indicator na may label, hindi
+                  // bare spinner lang.
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const AppLoadingIndicator(
+                        message: 'Loading your repairs...');
                   }
 
+                  // Error  user-friendly message imbes na raw
+                  // Firestore exception text.
                   if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
+                    return AppErrorState(
+                      message: friendlyErrorMessage(snapshot.error),
+                    );
                   }
 
                   final docs = snapshot.data?.docs ?? [];
 
-                  // Sort newest first by createdAt (done client-side to
-                  // avoid needing a Firestore composite index).
-                  final sortedDocs = [...docs];
+                  // "My Repair"  active/ongoing lang. Once
+                  // Completed o Declined na, dun na lang makikita
+                  // sa Repair History — dito na wala na.
+                  final activeDocs = docs.where((doc) {
+                    final status = (doc.data()
+                        as Map<String, dynamic>)['status'] as String?;
+                    return status != 'Completed' && status != 'Declined';
+                  }).toList();
+
+                  // Newest first, batay sa createdAt (client-side sort
+                  // para maiwasan ang composite index requirement).
+                  final sortedDocs = [...activeDocs];
                   sortedDocs.sort((a, b) {
                     final aTime = (a.data()
                         as Map<String, dynamic>)['createdAt'] as Timestamp?;
@@ -124,125 +137,130 @@ class MyRepairScreen extends StatelessWidget {
                     return bTime.compareTo(aTime);
                   });
 
+                  // Empty state malinaw na paalala kung ano next step
+                  // ng customer, hindi lang blangkong screen.
                   if (sortedDocs.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.build_outlined,
-                                size: 64, color: Colors.grey.shade300),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'No repair requests yet.',
-                              style: TextStyle(
-                                  fontSize: 16, color: Color(0xFF6B7280)),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Submit a repair request from the Home tab to get started.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 13, color: Color(0xFF9CA3AF)),
-                            ),
-                          ],
-                        ),
+                    return RefreshIndicator(
+                      color: AppColors.dark,
+                      onRefresh: () async {
+                        await Future.delayed(
+                            const Duration(milliseconds: 600));
+                      },
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(height: 80),
+                          AppEmptyState(
+                            icon: Icons.build_outlined,
+                            title: 'No active repairs right now.',
+                            subtitle:
+                                'Submit a repair request from the Home tab, or check Repair History for completed repairs.',
+                          ),
+                        ],
                       ),
                     );
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                    itemCount: sortedDocs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final doc = sortedDocs[index];
-                      final data = doc.data() as Map<String, dynamic>;
-                      final status = data['status'] as String? ?? 'Pending';
-                      final applianceType =
-                          data['applianceType'] as String? ?? 'Repair';
+                  return RefreshIndicator(
+                    color: AppColors.dark,
+                    onRefresh: () async {
+                      await Future.delayed(const Duration(milliseconds: 600));
+                    },
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: sortedDocs.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final doc = sortedDocs[index];
+                        final data = doc.data() as Map<String, dynamic>;
+                        final status =
+                            data['status'] as String? ?? 'Pending';
+                        final applianceType =
+                            data['applianceType'] as String? ?? 'Repair';
 
-                      // Tap a request row to open its tracking detail.
-                      return GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TrackingScreen(
-                              trackingId: data['trackingId'],
+                        return GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TrackingScreen(
+                                trackingId: data['trackingId'],
+                              ),
                             ),
                           ),
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border:
-                                Border.all(color: const Color(0xFFE5E7EB)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: const Color(0xFF111827),
-                                      width: 1.5),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                  color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: const Color(0xFF111827),
+                                        width: 1.5),
+                                  ),
+                                  child: Icon(
+                                    _iconForAppliance(applianceType),
+                                    color: const Color(0xFF111827),
+                                    size: 22,
+                                  ),
                                 ),
-                                child: Icon(
-                                  _iconForAppliance(applianceType),
-                                  color: const Color(0xFF111827),
-                                  size: 22,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      applianceType,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF111827),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        applianceType,
+                                        style: const TextStyle(
+                                          fontSize: AppColors.fontBody,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textDark,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 8,
-                                          height: 8,
-                                          decoration: BoxDecoration(
-                                            color: _colorForStatus(status),
-                                            shape: BoxShape.circle,
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  _colorForStatus(status),
+                                              shape: BoxShape.circle,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          status,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            color: Color(0xFF6B7280),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            status,
+                                            style: const TextStyle(
+                                              fontSize: AppColors.fontLabel,
+                                              color: AppColors.textGray,
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const Icon(Icons.chevron_right,
-                                  color: Color(0xFF9CA3AF)),
-                            ],
+                                const Icon(Icons.chevron_right,
+                                    color: Color(0xFF9CA3AF)),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   );
                 },
               ),

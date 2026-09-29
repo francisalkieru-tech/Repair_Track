@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 
-/// Service History Screen — accessible via QR scan o deep link,
-/// kahit walang login (public). Ipinapakita ang buong service record
-/// ng isang COMPLETED repair: repair info, parts used, technician,
-/// status history with dates, at lahat ng photos.
-///
-/// Para sa non-Completed records, ginagamit pa rin ang TrackingScreen
-/// (para makita ng customer ang ongoing progress nila).
 class ServiceHistoryScreen extends StatelessWidget {
   final String trackingId;
 
@@ -16,10 +11,10 @@ class ServiceHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Service History'),
-        backgroundColor: const Color(0xFF2563EB),
+        backgroundColor: AppColors.dark,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -31,7 +26,13 @@ class ServiceHistoryScreen extends StatelessWidget {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppLoadingIndicator(
+                message: 'Loading service record...');
+          }
+
+          if (snapshot.hasError) {
+            return AppErrorState(
+                message: friendlyErrorMessage(snapshot.error));
           }
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -47,31 +48,10 @@ class ServiceHistoryScreen extends StatelessWidget {
   }
 
   Widget _buildNotFound() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 16),
-            const Text(
-              'Service Record Not Found',
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827)),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'No service record found for tracking ID: $trackingId',
-              textAlign: TextAlign.center,
-              style:
-                  const TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
-            ),
-          ],
-        ),
-      ),
+    return AppEmptyState(
+      icon: Icons.search_off,
+      title: 'Service Record Not Found',
+      subtitle: 'No service record found for tracking ID: $trackingId',
     );
   }
 
@@ -110,7 +90,7 @@ class ServiceHistoryScreen extends StatelessWidget {
                     SizedBox(width: 6),
                     Text('Service Completed',
                         style:
-                            TextStyle(color: Colors.white70, fontSize: 12)),
+                            TextStyle(color: Colors.white70, fontSize: AppColors.fontCaption)),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -127,14 +107,14 @@ class ServiceHistoryScreen extends StatelessWidget {
                 Text(
                   data['applianceType'] ?? '',
                   style: const TextStyle(
-                      color: Colors.white, fontSize: 15),
+                      color: Colors.white, fontSize: AppColors.fontBody),
                 ),
                 if (completedAt != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Completed: ${_formatDate(completedAt.toDate())}',
                     style: const TextStyle(
-                        color: Colors.white70, fontSize: 12),
+                        color: Colors.white70, fontSize: AppColors.fontCaption),
                   ),
                 ],
               ],
@@ -164,8 +144,7 @@ class ServiceHistoryScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Warranty Information — lalabas lang kung may warranty na
-          // naitala (ibig sabihin, na-set ito noong "Completed" ang status)
+          // Warranty Information 
           if (data['warrantyMonths'] != null) ...[
             _buildWarrantySection(data),
             const SizedBox(height: 16),
@@ -189,17 +168,17 @@ class ServiceHistoryScreen extends StatelessWidget {
                     return Container(
                       height: 180,
                       alignment: Alignment.center,
-                      child:
-                          const CircularProgressIndicator(strokeWidth: 2),
+                      child: const CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.dark),
                     );
                   },
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (context, error, stackTrace) => Container(
                     height: 80,
                     alignment: Alignment.center,
                     color: const Color(0xFFF3F4F6),
                     child: const Text('Failed to load photo',
                         style: TextStyle(
-                            fontSize: 12, color: Color(0xFF6B7280))),
+                            fontSize: AppColors.fontCaption, color: AppColors.textGray)),
                   ),
                 ),
               ),
@@ -217,15 +196,15 @@ class ServiceHistoryScreen extends StatelessWidget {
                 children: [
                   const CircleAvatar(
                     radius: 18,
-                    backgroundColor: Color(0xFFDBEAFE),
+                    backgroundColor: AppColors.dark,
                     child: Icon(Icons.person,
-                        color: Color(0xFF1E40AF), size: 18),
+                        color: Colors.white, size: 18),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     data['assignedTechnician'],
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
+                        fontSize: AppColors.fontBody, fontWeight: FontWeight.w600, color: AppColors.textDark),
                   ),
                 ],
               ),
@@ -233,7 +212,6 @@ class ServiceHistoryScreen extends StatelessWidget {
             const SizedBox(height: 16),
           ],
 
-          // Parts used (from latest Waiting for Parts or In Process entry)
           () {
             final partsEntry = statusHistory.lastWhere(
               (e) =>
@@ -263,7 +241,7 @@ class ServiceHistoryScreen extends StatelessWidget {
                 ? const Text(
                     'No history entries yet.',
                     style:
-                        TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                        TextStyle(fontSize: AppColors.fontLabel, color: AppColors.textGray),
                   )
                 : Column(
                     children: statusHistory.asMap().entries.map((entry) {
@@ -290,7 +268,7 @@ class ServiceHistoryScreen extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: statusLabel == 'Completed'
                                       ? const Color(0xFF166534)
-                                      : const Color(0xFF2563EB),
+                                      : AppColors.dark,
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(Icons.check,
@@ -317,16 +295,16 @@ class ServiceHistoryScreen extends StatelessWidget {
                                     statusLabel,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: Color(0xFF111827),
+                                      fontSize: AppColors.fontLabel,
+                                      color: AppColors.textDark,
                                     ),
                                   ),
                                   if (ts != null)
                                     Text(
                                       _formatDate(ts.toDate()),
                                       style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Color(0xFF9CA3AF)),
+                                          fontSize: AppColors.fontCaption,
+                                          color: AppColors.textLightGray),
                                     ),
                                   if (tech != null &&
                                       tech.isNotEmpty) ...[
@@ -334,8 +312,8 @@ class ServiceHistoryScreen extends StatelessWidget {
                                     Text(
                                       'Tech: $tech',
                                       style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF6B7280)),
+                                          fontSize: AppColors.fontCaption,
+                                          color: AppColors.textGray),
                                     ),
                                   ],
                                   if (note.isNotEmpty) ...[
@@ -343,7 +321,7 @@ class ServiceHistoryScreen extends StatelessWidget {
                                     Text(
                                       note,
                                       style: const TextStyle(
-                                          fontSize: 13,
+                                          fontSize: AppColors.fontLabel,
                                           color: Color(0xFF374151)),
                                     ),
                                   ],
@@ -366,20 +344,20 @@ class ServiceHistoryScreen extends StatelessWidget {
                                             alignment: Alignment.center,
                                             child:
                                                 const CircularProgressIndicator(
-                                                    strokeWidth: 2),
+                                                    strokeWidth: 2, color: AppColors.dark),
                                           );
                                         },
                                         errorBuilder:
-                                            (_, __, ___) => Container(
+                                            (context, error, stackTrace) => Container(
                                           height: 60,
                                           alignment: Alignment.center,
                                           color: const Color(0xFFF3F4F6),
                                           child: const Text(
                                               'Failed to load photo',
                                               style: TextStyle(
-                                                  fontSize: 12,
+                                                  fontSize: AppColors.fontCaption,
                                                   color:
-                                                      Color(0xFF6B7280))),
+                                                      AppColors.textGray)),
                                         ),
                                       ),
                                     ),
@@ -400,12 +378,12 @@ class ServiceHistoryScreen extends StatelessWidget {
             child: Column(
               children: [
                 const Icon(Icons.verified_outlined,
-                    color: Color(0xFF9CA3AF), size: 20),
+                    color: AppColors.textLightGray, size: 20),
                 const SizedBox(height: 4),
                 const Text(
                   'This is an official service record from RepairTrack.',
                   style:
-                      TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                      TextStyle(fontSize: AppColors.fontCaption, color: AppColors.textLightGray),
                   textAlign: TextAlign.center,
                 ),
                 Text(
@@ -438,7 +416,7 @@ class ServiceHistoryScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -450,14 +428,14 @@ class ServiceHistoryScreen extends StatelessWidget {
           Row(
             children: [
               const Icon(Icons.shield_outlined,
-                  size: 16, color: Color(0xFF2563EB)),
+                  size: 16, color: AppColors.dark),
               const SizedBox(width: 8),
               const Text(
                 'Warranty Information',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: AppColors.fontLabel,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827),
+                  color: AppColors.textDark,
                 ),
               ),
               const Spacer(),
@@ -474,11 +452,11 @@ class ServiceHistoryScreen extends StatelessWidget {
                   child: Text(
                     isActive ? 'Active' : 'Expired',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: AppColors.fontCaption,
                       fontWeight: FontWeight.w600,
                       color: isActive
                           ? const Color(0xFF166534)
-                          : const Color(0xFF6B7280),
+                          : AppColors.textGray,
                     ),
                   ),
                 ),
@@ -494,15 +472,15 @@ class ServiceHistoryScreen extends StatelessWidget {
             const Text(
               'Terms',
               style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
+                  fontSize: AppColors.fontLabel,
+                  color: AppColors.textGray,
                   fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 4),
             Text(
               terms,
               style: const TextStyle(
-                  fontSize: 13, color: Color(0xFF111827)),
+                  fontSize: AppColors.fontLabel, color: AppColors.textDark),
             ),
           ],
         ],
@@ -523,7 +501,7 @@ class ServiceHistoryScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -534,14 +512,14 @@ class ServiceHistoryScreen extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: const Color(0xFF2563EB)),
+              Icon(icon, size: 16, color: AppColors.dark),
               const SizedBox(width: 8),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: AppColors.fontLabel,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827),
+                  color: AppColors.textDark,
                 ),
               ),
             ],
@@ -564,16 +542,16 @@ class ServiceHistoryScreen extends StatelessWidget {
             child: Text(
               label,
               style: const TextStyle(
-                  fontSize: 13, color: Color(0xFF6B7280)),
+                  fontSize: AppColors.fontCaption, color: AppColors.textGray),
             ),
           ),
           Expanded(
             child: Text(
               value,
               style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: AppColors.fontCaption,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF111827)),
+                  color: AppColors.textDark),
             ),
           ),
         ],
@@ -589,6 +567,6 @@ class ServiceHistoryScreen extends StatelessWidget {
     final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final minute = dt.minute.toString().padLeft(2, '0');
     final period = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${months[dt.month - 1]} ${dt.day}, ${dt.year} ${hour}:${minute} $period';
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year} $hour:$minute $period';
   }
 }

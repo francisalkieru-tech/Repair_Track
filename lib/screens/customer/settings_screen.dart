@@ -3,11 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
 import '../auth/Welcome_screen.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 
-/// "Setting" tab — profile info (view/edit), logout, at app info.
-/// Ginagamit ang parehong Firestore fields/logic ng dating
-/// ProfileScreen, pero ito na ang laman ng Settings tab mismo
-/// (walang sariling AppBar dahil naka-loob na sa MainNavScreen).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -68,10 +66,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isSaving = true);
-
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
+    setState(() => _isSaving = true);
 
     try {
       await FirebaseFirestore.instance.collection('customers').doc(uid).update({
@@ -80,6 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'address': _addressController.text.trim(),
       });
 
+      if (!mounted) return;
       setState(() {
         _isSaving = false;
         _isEditing = false;
@@ -89,17 +88,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Profile updated successfully!'),
-            backgroundColor: Color(0xFF16A34A),
+            backgroundColor: AppColors.success,
           ),
         );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text(friendlyErrorMessage(e)),
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -114,10 +114,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const AppLoadingIndicator(message: 'Loading your settings...')
             : SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Form(
@@ -132,15 +132,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const Text(
                             'Settings',
                             style: TextStyle(
-                              fontSize: 24,
+                              fontSize: AppColors.fontTitle,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF111827),
+                              color: AppColors.textDark,
                             ),
                           ),
                           if (!_isEditing)
                             IconButton(
                               icon: const Icon(Icons.edit,
-                                  color: Color(0xFF111827)),
+                                  color: AppColors.textDark),
                               tooltip: 'Edit Profile',
                               onPressed: () =>
                                   setState(() => _isEditing = true),
@@ -172,15 +172,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ? _nameController.text
                                   : 'Customer',
                               style: const TextStyle(
-                                  fontSize: 18,
+                                  fontSize: AppColors.fontTitle,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF111827)),
+                                  color: AppColors.textDark),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               _email,
                               style: const TextStyle(
-                                  fontSize: 13, color: Color(0xFF6B7280)),
+                                  fontSize: AppColors.fontLabel,
+                                  color: AppColors.textGray),
                             ),
                           ],
                         ),
@@ -217,7 +218,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Text(
                         'Email cannot be changed.',
                         style: TextStyle(
-                            fontSize: 11, color: Color(0xFF9CA3AF)),
+                            fontSize: AppColors.fontCaption, color: AppColors.textGray),
                       ),
                       const SizedBox(height: 16),
 
@@ -273,7 +274,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               child: ElevatedButton(
                                 onPressed: _isSaving ? null : _saveProfile,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.black,
+                                  backgroundColor: AppColors.dark,
                                   padding: const EdgeInsets.symmetric(
                                       vertical: 14),
                                   shape: RoundedRectangleBorder(
@@ -281,12 +282,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           BorderRadius.circular(10)),
                                 ),
                                 child: _isSaving
-                                    ? const SizedBox(
-                                        height: 18,
-                                        width: 18,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white))
+                                    ? const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            height: 18,
+                                            width: 18,
+                                            child:
+                                                CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: Colors.white),
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text('Saving...',
+                                              style: TextStyle(
+                                                  color: Colors.white)),
+                                        ],
+                                      )
                                     : const Text('Save Changes',
                                         style: TextStyle(
                                             color: Colors.white)),
@@ -347,58 +359,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _confirmLogout(BuildContext context) {
-    showDialog(
+    showAppDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFF6B7280))),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await AuthService().logout();
-              if (context.mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                  (route) => false,
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Logout',
-                style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+      title: 'Logout',
+      content: const Text('Are you sure you want to logout?',
+          style: TextStyle(fontSize: AppColors.fontLabel, color: AppColors.textGray)),
+      actions: [
+        AppDialogAction(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context),
+        ),
+        AppDialogAction(
+          label: 'Logout',
+          isPrimary: true,
+          isDestructive: true,
+          onPressed: () async {
+            Navigator.pop(context);
+            await AuthService().logout();
+            if (context.mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                (route) => false,
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 
   Widget _buildSectionLabel(String text) => Text(
         text,
         style: const TextStyle(
-            fontSize: 16,
+            fontSize: AppColors.fontBody,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF111827)),
+            color: AppColors.textDark),
       );
 
   Widget _buildLabel(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(text,
             style: const TextStyle(
-                fontSize: 13,
+                fontSize: AppColors.fontLabel,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF6B7280))),
+                color: AppColors.textGray)),
       );
 
   Widget _buildField({
@@ -445,19 +450,20 @@ class _AboutTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: const Color(0xFF6B7280)),
+          Icon(icon, size: 20, color: AppColors.textGray),
           const SizedBox(width: 12),
           Text(
             label,
             style: const TextStyle(
-                fontSize: 14,
+                fontSize: AppColors.fontLabel,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF111827)),
+                color: AppColors.textDark),
           ),
           const Spacer(),
           Text(
             value,
-            style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+            style: const TextStyle(
+                fontSize: AppColors.fontCaption, color: AppColors.textGray),
           ),
         ],
       ),

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import '../../services/auth_service.dart';
 import 'login_screen.dart';
+import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 
-// One-time admin setup screen — walang na SMS verification step, dahil
-// naka-enforce na ang "isang beses lang" na registration sa Firestore
-// rules mismo (adminSetup/lock). Kapag na-register na ang unang admin,
-// awtomatikong mawawala/mababalak ang link papunta dito.
+
 class AdminRegisterScreen extends StatefulWidget {
   const AdminRegisterScreen({super.key});
 
@@ -13,10 +13,13 @@ class AdminRegisterScreen extends StatefulWidget {
   State<AdminRegisterScreen> createState() => _AdminRegisterScreenState();
 }
 
-class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
+class _AdminRegisterScreenState extends State<AdminRegisterScreen>
+    with SingleTickerProviderStateMixin {
   final AuthService _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  late AnimationController _lottieController;
+
   final _shopNameController = TextEditingController();
   final _shopAddressController = TextEditingController();
   final _emailController = TextEditingController();
@@ -28,6 +31,12 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    _lottieController = AnimationController(vsync: this);
+  }
+
+  @override
   void dispose() {
     _shopNameController.dispose();
     _shopAddressController.dispose();
@@ -35,6 +44,7 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
     _contactController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _lottieController.dispose();
     super.dispose();
   }
 
@@ -52,8 +62,8 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
       contactNumber: _contactController.text.trim(),
     );
 
-    setState(() => _isLoading = false);
     if (!mounted) return;
+    setState(() => _isLoading = false);
 
     if (error == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -67,12 +77,11 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
         MaterialPageRoute(builder: (_) => const LoginScreen(role: 'admin')),
       );
     } else {
-      // Kadalasang error dito kapag may nauna nang admin: yung Firestore
-      // rule (adminSetup/lock) ang bumlock, hindi yung AuthService — kaya
-      // manual nating hawakan yung message na ito para malinaw sa user.
       final message = error.contains('permission-denied')
           ? 'Admin registration is closed. An admin account already exists — please sign in instead.'
-          : _authService.friendlyError(error);
+          : (_authService.friendlyError(error).isNotEmpty
+              ? _authService.friendlyError(error)
+              : friendlyErrorMessage(error));
       setState(() => _errorMessage = message);
     }
   }
@@ -80,58 +89,310 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(15, 10, 15, 18),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 390),
-              child: Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                      icon: const Icon(Icons.arrow_back, size: 16),
+      backgroundColor: AppColors.background,
+      body: Container(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 448),
+                child: Column(
+                  children: [
+                    // Back button
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 7),
-                  const _RepairLogo(size: 58),
-                  const SizedBox(height: 7),
-                  const Text(
-                    'Admin Registration',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 1),
-                  const Text(
-                    'Setup your repair shop account (one-time only)',
-                    style: TextStyle(fontSize: 7, color: Color(0xFF777777)),
-                  ),
-                  const SizedBox(height: 12),
-                  _AdminCard(
-                    formKey: _formKey,
-                    errorMessage: _errorMessage,
-                    isLoading: _isLoading,
-                    passwordVisible: _isPasswordVisible,
-                    confirmPasswordVisible: _isConfirmPasswordVisible,
-                    onTogglePassword: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
-                    onToggleConfirmPassword: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible),
-                    onRegister: _register,
-                    onSignIn: () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginScreen(role: 'admin')),
+                    const SizedBox(height: 8),
+
+                    // Animated Logo — play once lang
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        gradient: AppColors.darkGradient,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Lottie.asset(
+                          'assets/wired-outline-409-tool-in-reveal.json',
+                          controller: _lottieController,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          onLoaded: (composition) {
+                            _lottieController
+                              ..duration = composition.duration
+                              ..forward();
+                          },
+                        ),
+                      ),
                     ),
-                    shopNameController: _shopNameController,
-                    shopAddressController: _shopAddressController,
-                    emailController: _emailController,
-                    contactController: _contactController,
-                    passwordController: _passwordController,
-                    confirmPasswordController: _confirmPasswordController,
-                  ),
-                ],
+                    const SizedBox(height: 16),
+
+                    const Text(
+                      'Admin Registration',
+                      style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textDark),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Setup your repair shop account (one-time only)',
+                      style: TextStyle(
+                          fontSize: AppColors.fontSubtitle,
+                          color: AppColors.textGray),
+                    ),
+                    const SizedBox(height: 24),
+
+                    Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Info banner
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFFBEB),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border:
+                                      Border.all(color: const Color(0xFFFCD34D)),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.info_outline,
+                                        color: Color(0xFFD97706), size: 20),
+                                    SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'This is only for authorized repair shop admins.',
+                                        style: TextStyle(
+                                            fontSize: AppColors.fontLabel,
+                                            color: Color(0xFF92400E)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+
+                              // Error — user-friendly message lang, may
+                              // icon para agad mapansin.
+                              if (_errorMessage != null)
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.dangerBg,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: AppColors.danger),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.error_outline,
+                                          color: AppColors.danger, size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(_errorMessage!,
+                                            style: const TextStyle(
+                                                color: AppColors.danger,
+                                                fontSize:
+                                                    AppColors.fontLabel)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                              _buildLabel('Shop Name *'),
+                              _buildField(
+                                  controller: _shopNameController,
+                                  hint: 'AllFix Repair Shop',
+                                  icon: Icons.store_outlined,
+                                  validator: (v) => v == null || v.isEmpty
+                                      ? 'Please enter shop name'
+                                      : null),
+                              const SizedBox(height: 16),
+
+                              _buildLabel('Shop Address *'),
+                              _buildField(
+                                  controller: _shopAddressController,
+                                  hint: 'Barangay, City, Province',
+                                  icon: Icons.location_on_outlined,
+                                  validator: (v) => v == null || v.isEmpty
+                                      ? 'Please enter shop address'
+                                      : null),
+                              const SizedBox(height: 16),
+
+                              _buildLabel('Shop Email Address *'),
+                              _buildField(
+                                  controller: _emailController,
+                                  hint: 'shop@example.com',
+                                  icon: Icons.email_outlined,
+                                  keyboard: TextInputType.emailAddress,
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return 'Please enter email';
+                                    }
+                                    if (!v.contains('@')) {
+                                      return 'Invalid email format';
+                                    }
+                                    return null;
+                                  }),
+                              const SizedBox(height: 16),
+
+                              _buildLabel('Shop Contact Number *'),
+                              _buildField(
+                                  controller: _contactController,
+                                  hint: '09XXXXXXXXX',
+                                  icon: Icons.phone_outlined,
+                                  keyboard: TextInputType.phone,
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return 'Please enter contact number';
+                                    }
+                                    if (v.length != 11) {
+                                      return 'Please enter a valid 11-digit number';
+                                    }
+                                    return null;
+                                  }),
+                              const SizedBox(height: 16),
+
+                              _buildLabel('Password *'),
+                              _buildPasswordField(
+                                controller: _passwordController,
+                                hint: 'Minimum 6 characters',
+                                isVisible: _isPasswordVisible,
+                                onToggle: () => setState(
+                                    () => _isPasswordVisible =
+                                        !_isPasswordVisible),
+                                validator: (v) {
+                                  if (v == null || v.isEmpty) {
+                                    return 'Please enter password';
+                                  }
+                                  if (v.length < 6) {
+                                    return 'Minimum 6 characters';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+
+                              _buildLabel('Confirm Password *'),
+                              _buildPasswordField(
+                                controller: _confirmPasswordController,
+                                hint: 'Re-enter your password',
+                                isVisible: _isConfirmPasswordVisible,
+                                onToggle: () => setState(() =>
+                                    _isConfirmPasswordVisible =
+                                        !_isConfirmPasswordVisible),
+                                validator: (v) => v != _passwordController.text
+                                    ? 'Passwords do not match'
+                                    : null,
+                              ),
+                              const SizedBox(height: 24),
+
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : _register,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.dark,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
+                                  ),
+                                  // "Creating account..." habang tumatakbo
+                                  // yung registration, hindi lang spinner.
+                                  child: _isLoading
+                                      ? const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              height: 18,
+                                              width: 18,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: Colors.white),
+                                            ),
+                                            SizedBox(width: 10),
+                                            Text('Creating account...',
+                                                style: TextStyle(
+                                                    fontSize:
+                                                        AppColors.fontBody,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                    color: Colors.white)),
+                                          ],
+                                        )
+                                      : const Text('Create Admin Account',
+                                          style: TextStyle(
+                                              fontSize: AppColors.fontBody,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white)),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              const Divider(),
+                              const SizedBox(height: 12),
+                              Center(
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    const Text('Already have an account? ',
+                                        style: TextStyle(
+                                            fontSize: AppColors.fontLabel,
+                                            color: AppColors.textGray)),
+                                    GestureDetector(
+                                      onTap: () => Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) => const LoginScreen(
+                                                role: 'admin')),
+                                      ),
+                                      child: const Text('Sign in',
+                                          style: TextStyle(
+                                              fontSize: AppColors.fontLabel,
+                                              color: AppColors.textDark,
+                                              fontWeight: FontWeight.bold,
+                                              decoration: TextDecoration
+                                                  .underline)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
             ),
           ),
@@ -139,213 +400,51 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
       ),
     );
   }
-}
 
-class _RepairLogo extends StatelessWidget {
-  final double size;
-  const _RepairLogo({required this.size});
+  Widget _buildLabel(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: AppColors.fontLabel, fontWeight: FontWeight.w500)),
+      );
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(size * .18)),
-      child: Icon(Icons.build_outlined, color: Colors.white, size: size * .62),
-    );
-  }
-}
-
-class _AdminCard extends StatelessWidget {
-  final GlobalKey<FormState> formKey;
-  final String? errorMessage;
-  final bool isLoading;
-  final bool passwordVisible;
-  final bool confirmPasswordVisible;
-  final VoidCallback onTogglePassword;
-  final VoidCallback onToggleConfirmPassword;
-  final VoidCallback onRegister;
-  final VoidCallback onSignIn;
-  final TextEditingController shopNameController;
-  final TextEditingController shopAddressController;
-  final TextEditingController emailController;
-  final TextEditingController contactController;
-  final TextEditingController passwordController;
-  final TextEditingController confirmPasswordController;
-
-  const _AdminCard({
-    required this.formKey,
-    required this.errorMessage,
-    required this.isLoading,
-    required this.passwordVisible,
-    required this.confirmPasswordVisible,
-    required this.onTogglePassword,
-    required this.onToggleConfirmPassword,
-    required this.onRegister,
-    required this.onSignIn,
-    required this.shopNameController,
-    required this.shopAddressController,
-    required this.emailController,
-    required this.contactController,
-    required this.passwordController,
-    required this.confirmPasswordController,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 11, 10, 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE7E7E7),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD0D0D0)),
-        boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 3, offset: Offset(0, 2))],
-      ),
-      child: Form(
-        key: formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Admin Registration', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 1),
-            const Text('Setup your repair shop account', style: TextStyle(fontSize: 6.5, color: Color(0xFF777777))),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF4C7),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: const Color(0xFFE4C45A)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline, color: Color(0xFF8A6A00), size: 13),
-                  SizedBox(width: 5),
-                  Expanded(child: Text('This is only for authorized repair shop admins.', style: TextStyle(fontSize: 6.5, color: Color(0xFF735B00)))),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (errorMessage != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(color: const Color(0xFFFFE8E8), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFFE57373))),
-                child: Text(errorMessage!, style: const TextStyle(fontSize: 7, color: Color(0xFFB71C1C))),
-              ),
-              const SizedBox(height: 7),
-            ],
-            _field('Shop Name *', shopNameController, 'AllFix Repair Shop', Icons.store_outlined, (v) => v == null || v.isEmpty ? 'Please enter shop name' : null),
-            const SizedBox(height: 6),
-            _field('Shop Address *', shopAddressController, 'Barangay, City, Province', Icons.location_on_outlined, (v) => v == null || v.isEmpty ? 'Please enter shop address' : null),
-            const SizedBox(height: 6),
-            _field('Shop Email Address *', emailController, 'shop@example.com', Icons.email_outlined, (v) {
-              if (v == null || v.isEmpty) return 'Please enter email';
-              if (!v.contains('@')) return 'Invalid email format';
-              return null;
-            }, keyboard: TextInputType.emailAddress),
-            const SizedBox(height: 6),
-            _field('Shop Contact Number *', contactController, '09XXXXXXXXX', Icons.phone_outlined, (v) {
-              if (v == null || v.isEmpty) return 'Please enter contact number';
-              if (v.length != 11) return 'Please enter a valid 11-digit number';
-              return null;
-            }, keyboard: TextInputType.phone),
-            const SizedBox(height: 6),
-            _passwordField('Create Password *', passwordController, 'Minimum 6 characters', passwordVisible, onTogglePassword, (v) {
-              if (v == null || v.isEmpty) return 'Please enter password';
-              if (v.length < 6) return 'Minimum 6 characters';
-              return null;
-            }),
-            const SizedBox(height: 6),
-            _passwordField('Confirm Password *', confirmPasswordController, 'Re-enter your password', confirmPasswordVisible, onToggleConfirmPassword, (v) => v != passwordController.text ? 'Passwords do not match' : null),
-            const SizedBox(height: 9),
-            SizedBox(
-              width: double.infinity,
-              height: 31,
-              child: ElevatedButton(
-                onPressed: isLoading ? null : onRegister,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0, padding: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4))),
-                child: isLoading
-                    ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Create Admin Account', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700)),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Divider(height: 1, color: Color(0xFFBBBBBB)),
-            const SizedBox(height: 6),
-            Center(
-              child: GestureDetector(
-                onTap: onSignIn,
-                child: const Text.rich(
-                  TextSpan(
-                    text: 'Already have an account? ',
-                    style: TextStyle(fontSize: 6.5, color: Color(0xFF777777)),
-                    children: [TextSpan(text: 'Sign in here', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700))],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _field(String label, TextEditingController controller, String hint, IconData icon, String? Function(String?) validator, {TextInputType? keyboard}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 3),
-        _input(controller: controller, hint: hint, icon: icon, validator: validator, keyboardType: keyboard),
-      ],
-    );
-  }
-
-  Widget _passwordField(String label, TextEditingController controller, String hint, bool visible, VoidCallback toggle, String? Function(String?) validator) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 3),
-        _input(controller: controller, hint: hint, icon: Icons.lock_outline, validator: validator, obscureText: !visible, suffix: IconButton(
-          onPressed: toggle,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          icon: Icon(visible ? Icons.visibility_off : Icons.visibility, size: 15, color: const Color(0xFF555555)),
-        )),
-      ],
-    );
-  }
-
-  Widget _input({required TextEditingController controller, required String hint, required IconData icon, required String? Function(String?) validator, TextInputType? keyboardType, bool obscureText = false, Widget? suffix}) {
-    return SizedBox(
-      height: 30,
-      child: TextFormField(
+  Widget _buildField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboard = TextInputType.text,
+    required String? Function(String?) validator,
+  }) =>
+      TextFormField(
         controller: controller,
-        keyboardType: keyboardType,
-        obscureText: obscureText,
-        validator: validator,
-        style: const TextStyle(fontSize: 7.5),
+        keyboardType: keyboard,
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 6.5, color: Color(0xFF999999)),
-          prefixIcon: Icon(icon, size: 14, color: Colors.black),
-          suffixIcon: suffix,
-          prefixIconConstraints: const BoxConstraints(minWidth: 27),
-          suffixIconConstraints: const BoxConstraints(minWidth: 28),
-          filled: true,
-          fillColor: Colors.white,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Color(0xFFD2D2D2))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Color(0xFFD2D2D2))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Colors.black, width: 1)),
+          prefixIcon: Icon(icon),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         ),
-      ),
-    );
-  }
+        validator: validator,
+      );
+
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required String hint,
+    required bool isVisible,
+    required VoidCallback onToggle,
+    required String? Function(String?) validator,
+  }) =>
+      TextFormField(
+        controller: controller,
+        obscureText: !isVisible,
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: const Icon(Icons.lock_outline),
+          suffixIcon: IconButton(
+            icon: Icon(isVisible ? Icons.visibility_off : Icons.visibility),
+            onPressed: onToggle,
+          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        validator: validator,
+      );
 }

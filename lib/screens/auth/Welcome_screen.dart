@@ -1,141 +1,357 @@
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
+
 import 'login_screen.dart';
 import 'customer_register_screen.dart';
+import '../tracking/tracking_input_screen.dart';
+import '../../utils/colors.dart';
 
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 18),
+            padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 390),
+              constraints: const BoxConstraints(maxWidth: 448),
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 8),
-                  const _RepairLogo(size: 58),
-                  const SizedBox(height: 8),
+                  // ---------------------------------------------------------
+                  // APP LOGO / ANIMATION
+                  // ---------------------------------------------------------
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.darkGradient,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Lottie.asset(
+                        'assets/wired-outline-409-tool-in-reveal.json',
+                        controller: _controller,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
+                        onLoaded: (composition) {
+                          _controller
+                            ..duration = composition.duration
+                            ..forward();
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   const Text(
                     'RepairTrack',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
                     ),
                   ),
-                  const SizedBox(height: 2),
+
+                  const SizedBox(height: 8),
+
                   const Text(
                     'Track, and Monitor Repairs',
-                    style: TextStyle(fontSize: 8.5, color: Color(0xFF777777)),
+                    style: TextStyle(
+                      fontSize: AppColors.fontSubtitle,
+                      color: AppColors.textGray,
+                    ),
                   ),
-                  const SizedBox(height: 14),
 
-                  _SoftCard(
-                    padding: const EdgeInsets.fromLTRB(12, 13, 12, 12),
-                    child: Column(
-                      children: [
-                        const Text(
-                          'Welcome!',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Choose an option to get started',
-                          style: TextStyle(
-                            fontSize: 8,
-                            color: Color(0xFF777777),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _WelcomeOption(
-                          icon: Icons.person_outline,
-                          title: 'Login as Customer',
-                          subtitle: 'Already have an account',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const LoginScreen(role: 'customer'),
+                  const SizedBox(height: 32),
+
+                  // ---------------------------------------------------------
+                  // LOGIN OPTIONS CARD
+                  // ---------------------------------------------------------
+                  Card(
+                    elevation: 8,
+                    shadowColor: Colors.grey.withOpacity(0.5),
+                    surfaceTintColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Welcome!',
+                            style: TextStyle(
+                              fontSize: AppColors.fontTitle,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 7),
-                        _WelcomeOption(
-                          icon: Icons.shield_outlined,
-                          title: 'Admin',
-                          subtitle: 'Admin access only',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const LoginScreen(role: 'admin'),
+
+                          const SizedBox(height: 8),
+
+                          const Text(
+                            'Choose an option to get started',
+                            style: TextStyle(
+                              fontSize: AppColors.fontSubtitle,
+                              color: AppColors.textGray,
                             ),
                           ),
+
+                          const SizedBox(height: 24),
+
+                          // Customer
+                          _OptionButton(
+                            icon: Icons.person,
+                            title: 'Login as Customer',
+                            subtitle: 'Already have an account',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const LoginScreen(role: 'customer'),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Admin
+                          _OptionButton(
+                            icon: Icons.shield,
+                            title: 'Admin',
+                            subtitle: 'Admin access only',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const LoginScreen(role: 'admin'),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Technician
+                          _OptionButton(
+                            icon: Icons.build,
+                            title: 'Technician',
+                            subtitle: 'Technician access only',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const LoginScreen(role: 'technician'),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ---------------------------------------------------------
+                  // CREATE ACCOUNT CARD
+                  // ---------------------------------------------------------
+                  Card(
+                    elevation: 8,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(
+                        color: Color.fromARGB(255, 94, 94, 94),
+                        width: 2,
+                      ),
+                    ),
+                    color: AppColors.background,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'New to RepairTrack?',
+                            style: TextStyle(
+                              fontSize: AppColors.fontLabel,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const CustomerRegisterScreen(),
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.dark,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Create New Account',
+                                style: TextStyle(
+                                  fontSize: AppColors.fontBody,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          const Text(
+                            'Register to submit and track your appliance repairs',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: AppColors.fontCaption,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ---------------------------------------------------------
+                  // GUEST TRACKING
+                  // ---------------------------------------------------------
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFE1E4E8),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 13),
-                  _SoftCard(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                     child: Column(
                       children: [
+                        const Icon(
+                          Icons.track_changes,
+                          size: 28,
+                          color: AppColors.dark,
+                        ),
+
+                        const SizedBox(height: 8),
+
                         const Text(
-                          'New to RepairTrack?',
+                          'Already have a tracking ID?',
                           style: TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black,
+                            fontSize: AppColors.fontLabel,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
                           ),
                         ),
-                        const SizedBox(height: 6),
+
+                        const SizedBox(height: 4),
+
+                        const Text(
+                          'Check the status of your repair without logging in.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: AppColors.fontCaption,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+
                         SizedBox(
                           width: double.infinity,
-                          height: 32,
-                          child: ElevatedButton(
+                          child: OutlinedButton.icon(
                             onPressed: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const CustomerRegisterScreen(),
+                                builder: (_) =>
+                                    const TrackingInputScreen(),
                               ),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              padding: EdgeInsets.zero,
+                            icon: const Icon(
+                              Icons.track_changes,
+                              size: 19,
                             ),
-                            child: const Text(
-                              'Create New Account',
+                            label: const Text(
+                              'Track a Repair',
                               style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
+                                fontSize: AppColors.fontBody,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        const Text(
-                          'Register to submit and track your repairs',
-                          style: TextStyle(
-                            fontSize: 6.5,
-                            color: Color(0xFF888888),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.dark,
+                              backgroundColor: Colors.white,
+                              side: const BorderSide(
+                                color: AppColors.dark,
+                                width: 1.5,
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
+
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -146,64 +362,17 @@ class WelcomeScreen extends StatelessWidget {
   }
 }
 
-class _RepairLogo extends StatelessWidget {
-  final double size;
+// ===========================================================================
+// LOGIN OPTION BUTTON
+// ===========================================================================
 
-  const _RepairLogo({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(size * .18),
-      ),
-      child: Icon(
-        Icons.build_outlined,
-        color: Colors.white,
-        size: size * .62,
-      ),
-    );
-  }
-}
-
-class _SoftCard extends StatelessWidget {
-  final Widget child;
-  final EdgeInsets padding;
-
-  const _SoftCard({required this.child, this.padding = const EdgeInsets.all(12)});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE7E7E7),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD0D0D0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 3,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _WelcomeOption extends StatelessWidget {
+class _OptionButton extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
-  const _WelcomeOption({
+  const _OptionButton({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -212,57 +381,53 @@ class _WelcomeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(5),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(5),
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: const Color(0xFFD4D4D4)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Icon(icon, color: Colors.white, size: 17),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black,
-                      ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.dark,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 26,
+              color: Colors.white,
+            ),
+
+            const SizedBox(width: 16),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: AppColors.fontBody,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 6.5,
-                        color: Color(0xFF777777),
-                      ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: AppColors.fontCaption,
+                      color: Colors.white70,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right, size: 15, color: Colors.black),
-            ],
-          ),
+            ),
+
+            const Icon(
+              Icons.chevron_right,
+              color: Colors.white70,
+            ),
+          ],
         ),
       ),
     );

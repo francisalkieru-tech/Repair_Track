@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/firestore_service.dart';
+import '../../utils/constants.dart';
 
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+  final ValueChanged<int>? onNavigate;
+
+  const DashboardScreen({super.key, this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +78,10 @@ class DashboardScreen extends StatelessWidget {
                       _StatCard(
                         title: 'Active Jobs',
                         value: '$activeJobs',
-                        icon: Icons.work_outline_rounded,
+                        icon: Icons.build_circle_rounded,
+                        onTap: onNavigate == null
+                            ? null
+                            : () => onNavigate!(1),
                       ),
 
                       StreamBuilder<QuerySnapshot>(
@@ -87,7 +93,10 @@ class DashboardScreen extends StatelessWidget {
                           return _StatCard(
                             title: 'Technicians',
                             value: '$count',
-                            icon: Icons.person_outline_rounded,
+                            icon: Icons.engineering_rounded,
+                            onTap: onNavigate == null
+                                ? null
+                                : () => onNavigate!(3),
                           );
                         },
                       ),
@@ -95,14 +104,20 @@ class DashboardScreen extends StatelessWidget {
                       _StatCard(
                         title: 'Complete Today',
                         value: '$completedToday',
-                        icon: Icons.check_circle_outline_rounded,
+                        icon: Icons.task_alt_rounded,
                         iconSuccess: true,
+                        onTap: onNavigate == null
+                            ? null
+                            : () => onNavigate!(2),
                       ),
 
                       _StatCard(
                         title: 'Pending Requests',
                         value: '$pendingCount',
-                        icon: Icons.pending_actions_outlined,
+                        icon: Icons.notifications_active_rounded,
+                        onTap: onNavigate == null
+                            ? null
+                            : () => onNavigate!(1),
                       ),
                     ];
 
@@ -239,100 +254,106 @@ class DashboardScreen extends StatelessWidget {
 }
 
 // STAT CARD
-
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
   final IconData icon;
   final bool iconSuccess;
+  final VoidCallback? onTap;
 
   const _StatCard({
     required this.title,
     required this.value,
     required this.icon,
     this.iconSuccess = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 112,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFBDBDBD),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
+        onTap: onTap,
+        mouseCursor: onTap == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: Container(
+          height: 112,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFBDBDBD),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 42,
+                      height: 1,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
               ),
 
-              const Spacer(),
-
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 42,
-                  height: 1,
-                  fontWeight: FontWeight.w400,
-                  color: Colors.black,
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: iconSuccess ? Colors.green : Colors.black,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 17,
+                    color: iconSuccess ? Colors.green : Colors.black,
+                  ),
                 ),
               ),
             ],
           ),
-
-          Positioned(
-            top: 0,
-            right: 0,
-            child: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: iconSuccess
-                      ? Colors.green
-                      : Colors.black,
-                  width: 1.5,
-                ),
-              ),
-              child: Icon(
-                icon,
-                size: 17,
-                color: iconSuccess
-                    ? Colors.green
-                    : Colors.black,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
 // COMMON PANEL
-
 class _DashboardPanel extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -398,7 +419,6 @@ class _DashboardPanel extends StatelessWidget {
 }
 
 // TECHNICIAN STATUS
-
 class _TechnicianStatusPanel extends StatelessWidget {
   final List<Map<String, dynamic>> allRequests;
 
@@ -522,8 +542,9 @@ class _TechnicianStatusPanel extends StatelessWidget {
                         locationBackground =
                             const Color(0xFFDDEEFF);
                       } else {
-                        location =
-                            status ?? 'Assigned';
+                        location = status != null
+                            ? AppConstants.displayLabel(status as String)
+                            : 'Assigned';
                         locationColor =
                             Colors.black;
                         locationBackground =
@@ -642,7 +663,6 @@ class _TechnicianStatusPanel extends StatelessWidget {
 }
 
 // RECENT ACTIVITY
-
 class _RecentActivityPanel extends StatelessWidget {
   final List<QueryDocumentSnapshot> docs;
 
@@ -857,7 +877,7 @@ class _RecentActivityPanel extends StatelessWidget {
                                     ),
                                   ),
                                   child: Text(
-                                    status,
+                                    AppConstants.displayLabel(status),
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow
@@ -886,7 +906,6 @@ class _RecentActivityPanel extends StatelessWidget {
 }
 
 // REPAIR TREND
-
 class _RepairTrendPanel extends StatelessWidget {
   final List<Map<String, dynamic>> allRequests;
 
@@ -1322,7 +1341,6 @@ class _TodayScheduleCard extends StatelessWidget {
 }
 
 // STATUS COLORS
-
 (Color, Color) _statusColors(String status) {
   switch (status) {
     case 'New Request':

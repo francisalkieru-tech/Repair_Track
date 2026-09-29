@@ -2,198 +2,176 @@ class TroubleshootingData {
   static Map<String, List<TroubleshootingStep>> steps = {
     'Refrigerator': [
       TroubleshootingStep(
-        title: 'Check the power connection',
+        title: 'Check the Power Connection',
         description:
-            'Make sure the refrigerator is properly plugged in and the outlet is working. Try plugging another appliance to test the outlet.',
+            'Make sure the refrigerator is properly plugged in and the outlet is working. Try plugging another device into the same outlet to confirm it has power.',
       ),
       TroubleshootingStep(
-        title: 'Check the temperature settings',
+        title: 'Check the Temperature Setting',
         description:
-            'Ensure the temperature dial is not set to "Off". Recommended setting is between 3-5 for the fridge and -18°C for the freezer.',
+            'Look at the thermostat or temperature dial inside the fridge. Make sure it is not accidentally set to "Off" or to the lowest cooling level.',
       ),
       TroubleshootingStep(
-        title: 'Check the door seals',
+        title: 'Check the Door Seal',
         description:
-            'Inspect the rubber door gaskets for cracks or gaps. A damaged seal causes cooling loss. Close a piece of paper in the door — if it slides out easily, the seal needs replacement.',
+            'Make sure the door closes all the way and nothing (like food or containers) is blocking it from sealing properly. A door that doesn\'t close fully can stop the fridge from cooling.',
       ),
       TroubleshootingStep(
-        title: 'Clean the condenser coils',
+        title: 'Listen for the Compressor',
         description:
-            'Dusty coils at the back or bottom reduce cooling efficiency. Unplug the unit and clean the coils with a brush or vacuum.',
+            'Place your hand or ear near the back/bottom of the fridge and listen for a faint humming sound. This means the compressor is running. If you hear nothing at all, note this down for the technician.',
       ),
       TroubleshootingStep(
-        title: 'Check for ice buildup',
+        title: 'Check the Back and Bottom Vents',
         description:
-            'Excessive frost in the freezer may block airflow. Defrost the unit manually by turning it off for 24 hours with the doors open.',
+            'Make sure the vents at the back or bottom of the fridge are not blocked by dust, boxes, or being pushed too close to the wall. Blocked vents can affect cooling.',
       ),
     ],
     'Air Conditioner': [
       TroubleshootingStep(
-        title: 'Check the power and remote',
+        title: 'Check Power and Remote',
         description:
-            'Ensure the unit is plugged in and the remote has working batteries. Try pressing the power button directly on the unit.',
+            'Confirm the unit is properly plugged in, and replace the remote batteries if the remote is not responding.',
       ),
       TroubleshootingStep(
-        title: 'Clean or replace the air filter',
+        title: 'Check the Circuit Breaker',
         description:
-            'A dirty filter blocks airflow and reduces cooling. Remove the front panel, take out the filter, wash it with water, dry completely, and reinstall.',
+            'Check your breaker box to see if the breaker connected to the aircon has tripped. If it has, switch it back on and see if the unit turns on.',
       ),
       TroubleshootingStep(
-        title: 'Check the thermostat setting',
+        title: 'Check for Blinking Error Lights',
         description:
-            'Set the temperature to at least 24°C below the current room temperature. Make sure it is set to "Cool" mode, not "Fan" only.',
+            'Look at the indoor unit for any blinking lights. If you see one blinking, try to count how many times it blinks in a row and write it down — this code helps the technician identify the issue faster.',
       ),
       TroubleshootingStep(
-        title: 'Check for ice on the evaporator coils',
+        title: 'Check the Air Filter',
         description:
-            'If the unit blows warm air or weak airflow, ice may have formed on the coils. Turn off the AC and run "Fan" mode for 1-2 hours to defrost.',
+            'Open the front cover of the indoor unit and check if the air filter looks dusty or dirty. A clogged filter can reduce cooling and cause the unit to run poorly.',
       ),
       TroubleshootingStep(
-        title: 'Check for refrigerant leak',
+        title: 'Check the Outdoor Unit',
         description:
-            'If the unit runs but does not cool, the refrigerant may be low. Look for ice on the copper pipes outside. This requires a professional technician.',
+            'Make sure the outdoor unit is not blocked by leaves, dust, plants, or objects, and that its fan can spin freely without obstruction.',
       ),
     ],
     'Television': [
       TroubleshootingStep(
-        title: 'Check the power connection',
+        title: 'Check the Power Cable',
         description:
-            'Ensure the TV is plugged in and the power indicator light is on. Try a different outlet or check if the AVR or surge protector is working.',
+            'Make sure the power cable is firmly plugged into both the TV and the outlet, and that the outlet is working.',
       ),
       TroubleshootingStep(
-        title: 'Check the remote control',
+        title: 'Try a Different Input or Channel',
         description:
-            'Replace the remote batteries and try again. If it still does not respond, use the buttons directly on the TV.',
+            'Switch to a different input source (HDMI, TV tuner) or channel to check if the issue only happens on one source.',
       ),
       TroubleshootingStep(
-        title: 'Check the input source',
+        title: 'Check the Remote Batteries',
         description:
-            'Press the "Source" or "Input" button and select the correct input (HDMI 1, AV, etc.) that matches your connected device.',
+            'Replace the batteries in the remote and try turning the TV on again, in case the remote itself is the issue.',
       ),
       TroubleshootingStep(
-        title: 'Restart the TV',
+        title: 'Check for Sound Without Picture',
         description:
-            'Unplug the TV from the outlet, wait 60 seconds, then plug it back in. This clears temporary software glitches.',
+            'Turn the TV on and listen closely. If you can hear sound but the screen stays completely black, note this down — it helps narrow down the problem.',
       ),
       TroubleshootingStep(
-        title: 'Check for picture but no sound',
+        title: 'Check for a Faint/Dim Image',
         description:
-            'Increase the volume and check if the TV is muted. If using external speakers, check the audio cable connections.',
+            'In a dark room, turn the TV on and look closely at the screen. If you can barely see a very dim image, this may point to a backlight issue rather than a total TV failure.',
       ),
     ],
     'Washing Machine': [
       TroubleshootingStep(
-        title: 'Check the power and water supply',
+        title: 'Check Power and Water Supply',
         description:
-            'Ensure the machine is plugged in and the water inlet valve is fully open. Check if the water hose is kinked or blocked.',
+            'Make sure the machine is plugged in and the water faucet/valve supplying it is fully turned on.',
       ),
       TroubleshootingStep(
-        title: 'Check the door/lid lock',
+        title: 'Check the Load Size',
         description:
-            'The machine will not start if the door is not fully closed and latched. Open and firmly close the door, then try again.',
+            'Avoid overloading the machine. Too many clothes or an unevenly distributed load can prevent the machine from spinning properly.',
       ),
       TroubleshootingStep(
-        title: 'Check for error codes',
+        title: 'Check the Lid or Door',
         description:
-            'Look at the display panel for any error code (e.g., E1, F2). Refer to the manual or search the model number + error code online.',
+            'Make sure the lid (top-load) or door (front-load) is fully closed. Most washing machines will not start or spin if it isn\'t securely shut.',
       ),
       TroubleshootingStep(
-        title: 'Check if the machine is overloaded',
+        title: 'Check the Drain Hose',
         description:
-            'Too many clothes can cause the machine to stop mid-cycle. Remove some items and try again. Maximum load is usually 80% of the drum.',
+            'Look at the drain hose for any kinks, bends, or blockage that could be stopping water from draining properly.',
       ),
       TroubleshootingStep(
-        title: 'Clean the drain filter',
+        title: 'Observe the Spin Cycle',
         description:
-            'A clogged drain filter prevents the machine from draining. Locate the filter (usually at the front bottom), unscrew it, clean out lint and debris.',
+            'Run a spin cycle and note if the drum spins weakly, doesn\'t spin at all, or makes unusual noise. Write down what you observe for the technician.',
       ),
     ],
     'Microwave': [
       TroubleshootingStep(
-        title: 'Check the power connection',
+        title: 'Check the Power Connection',
         description:
-            'Ensure the microwave is properly plugged in. Check if the circuit breaker for that outlet has tripped.',
+            'Make sure the microwave is plugged into a working outlet. Try another device on the same outlet to confirm it has power.',
       ),
       TroubleshootingStep(
-        title: 'Check the door switches',
+        title: 'Check the Door Latch',
         description:
-            'The microwave will not operate if the door is not completely closed. Open and firmly close the door. Check for any visible damage to the door latch.',
+            'Make sure the door closes and latches fully. Most microwaves will not turn on at all if the door isn\'t securely shut.',
       ),
       TroubleshootingStep(
-        title: 'Check the turntable',
+        title: 'Check the Timer and Settings',
         description:
-            'Ensure the glass turntable and its support ring are correctly positioned. A misaligned turntable can stop the microwave from running.',
+            'Confirm you\'ve set a cook time and pressed Start. Some microwaves won\'t run if the time is set to zero.',
       ),
       TroubleshootingStep(
-        title: 'Reset the microwave',
+        title: 'Check the Circuit Breaker',
         description:
-            'Unplug the microwave for 2 minutes, then plug it back in. This resets the internal computer and may clear the issue.',
+            'Check your breaker box to see if the breaker or fuse connected to the microwave has tripped, and reset it if needed.',
       ),
     ],
     'Electric Fan': [
       TroubleshootingStep(
-        title: 'Check the power connection',
+        title: 'Check the Power Connection',
         description:
-            'Ensure the fan is plugged in properly. Test the outlet with another device to confirm it has power.',
+            'Make sure the fan is plugged in and the outlet is working. Try a different outlet if available.',
       ),
       TroubleshootingStep(
-        title: 'Check the speed control',
+        title: 'Check the Speed Switch',
         description:
-            'Try all speed settings. If one speed works but others do not, the capacitor or speed switch may be faulty.',
+            'Try switching between all available speed settings to see if any of them work.',
       ),
       TroubleshootingStep(
-        title: 'Clean the fan blades and motor',
+        title: 'Check for Obstruction',
         description:
-            'Dust buildup can slow down or stop the motor. Unplug the fan, disassemble the blade guard, and wipe all blades and the motor vent.',
+            'Make sure nothing is blocking the blades and that they can turn freely by hand when unplugged.',
       ),
       TroubleshootingStep(
-        title: 'Check for blade obstruction',
+        title: 'Check for Unusual Heat or Smell',
         description:
-            'Spin the blades manually (when unplugged). If they do not spin freely, something may be caught in the motor or the bearing may be worn.',
+            'Feel if the motor area is unusually hot or if there\'s a burnt smell. If so, stop using the fan immediately and mention this to the technician — do not continue using it.',
       ),
     ],
     'Water Dispenser': [
       TroubleshootingStep(
-        title: 'Check the power connection',
+        title: 'Check the Power Connection',
         description:
-            'Ensure the dispenser is plugged in and the power switch is turned on. Check if the thermostat or safety fuse has tripped.',
+            'For hot and cold dispensers, make sure it is plugged in and the power switch (usually at the back) is turned on.',
       ),
       TroubleshootingStep(
-        title: 'Check the water bottle',
+        title: 'Check the Water Bottle or Source',
         description:
-            'Ensure the water bottle is properly seated on the dispenser. A loose bottle causes air gaps that stop water flow.',
+            'Make sure the water bottle is properly seated and not empty, or that the water line has water flowing into it.',
       ),
       TroubleshootingStep(
-        title: 'Check for leaks',
+        title: 'Test Both Taps',
         description:
-            'Inspect the drip tray and the area around the bottle connection. If water is leaking, the bottle may be cracked or the seal is damaged.',
+            'Try both the hot and cold taps separately to check if only one side isn\'t working, or if both are affected.',
       ),
       TroubleshootingStep(
-        title: 'Descale the unit',
+        title: 'Check for Leaks',
         description:
-            'Mineral buildup from hard water can block water flow. Run a descaling solution (water + white vinegar) through the system every 3 months.',
-      ),
-    ],
-    'Others': [
-      TroubleshootingStep(
-        title: 'Check the power connection',
-        description:
-            'Ensure the appliance is properly plugged in and the outlet has power. Try a different outlet if available.',
-      ),
-      TroubleshootingStep(
-        title: 'Check for visible damage',
-        description:
-            'Inspect the power cord, plug, and body of the appliance for any cracks, burns, or frayed wires. Do not use if there is visible damage.',
-      ),
-      TroubleshootingStep(
-        title: 'Restart the appliance',
-        description:
-            'Turn off and unplug the appliance for 2-3 minutes, then plug it back in and try again. This resets internal components.',
-      ),
-      TroubleshootingStep(
-        title: 'Check the user manual',
-        description:
-            'Refer to the troubleshooting section of your appliance\'s user manual for model-specific guidance.',
+            'Look underneath and around the base of the dispenser for any signs of water leaking or pooling.',
       ),
     ],
   };

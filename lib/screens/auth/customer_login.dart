@@ -48,8 +48,8 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen> {
       address: _addressController.text.trim(),
     );
 
-    setState(() => _isLoading = false);
     if (!mounted) return;
+    setState(() => _isLoading = false);
 
     if (error == null) {
       Navigator.pushReplacement(
