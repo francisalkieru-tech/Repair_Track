@@ -61,226 +61,371 @@ class TrackingScreen extends StatelessWidget {
 
   Widget _buildTrackingContent(
       BuildContext context, String docId, Map<String, dynamic> data) {
-    final status = data['status'] ?? 'Pending';
-    final allStatuses = [
-      'Pending',
-      'Accepted',
-      'In Home',
-      'In Shop',
-      'In Process',
-      'Waiting for Parts',
-      'Complete',
-    ];
-    final normalizedStatus = status == 'Completed' ? 'Complete' : status;
-    final currentIndex = allStatuses.indexOf(normalizedStatus);
-
+    final status = (data['status'] ?? 'Pending') as String;
     final stepInfo = _buildStepInfo(data);
+    final isDeclined = status == AppConstants.statusDeclined;
+
+    // Build the timeline from the real lifecycle (incl. Queued / Pending Review)
+    final steps = _buildSteps(status, stepInfo);
+    final currentIndex = steps.indexWhere((s) => s.keys.contains(status));
 
     return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1) Header: tracking ID + current status + plain-language message
+              _buildHeaderCard(status),
+              const SizedBox(height: 16),
+
+              // 2) Customer action needed (parts decision) goes first
+              if (data['partsDecisionStatus'] ==
+                  AppConstants.partsDecisionAwaitingCustomer) ...[
+                _CustomerPartsDecisionPanel(docId: docId, data: data),
+                const SizedBox(height: 16),
+              ],
+
+              // 3) Status timeline (the core of this screen)
+              if (isDeclined)
+                _buildDeclinedCard(stepInfo[status])
+              else
+                _buildTimelineCard(steps, currentIndex),
+              const SizedBox(height: 16),
+
+              // 4) Repair details
+              _buildInfoCard(context, data),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Dark header card with ID, status badge and a short message
+  Widget _buildHeaderCard(String status) {
+    final message = _statusMessage(status);
+    return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: AppColors.darkGradient,
+        borderRadius: BorderRadius.circular(18),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: AppColors.darkGradient,
-              borderRadius: BorderRadius.circular(16),
+          const Text(
+            'TRACKING ID',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: AppColors.fontCaption,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            trackingId,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2),
+          ),
+          const SizedBox(height: 14),
+          _buildStatusBadge(status),
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: AppColors.fontLabel,
+                  height: 1.4),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Short customer-friendly sentence for each status
+  String _statusMessage(String status) {
+    switch (AppConstants.normalizeStatus(status)) {
+      case 'Pending':
+        return 'We received your request. The shop will review it shortly.';
+      case 'Accepted':
+        return 'Your request was accepted. A technician will be assigned.';
+      case 'Tech Visit':
+        return 'A technician will visit you at your address for the repair.';
+      case 'On-Site':
+        return 'Your repair will be done on-site at the shop.';
+      case 'Queued':
+        return 'A technician is assigned and will start after finishing another job.';
+      case 'In Process':
+        return 'Your appliance is being repaired.';
+      case 'Waiting for Parts':
+        return 'A part is needed to continue your repair.';
+      case 'Pending Review':
+        return 'The repair is done and is waiting for the shop\'s final confirmation.';
+      case 'Completed':
+        return 'Your repair is complete. Thank you!';
+      case 'Declined':
+        return 'This request was declined by the shop.';
+      default:
+        return '';
+    }
+  }
+
+  // Which steps appear in the timeline. Optional steps (Queued, Waiting for
+  // Parts) only show once the request has actually reached them.
+  List<_TimelineStep> _buildSteps(
+      String rawStatus, Map<String, _StepInfo> rawInfo) {
+    // Old records may still say 'In Home' / 'In Shop' until migrated.
+    final status = AppConstants.normalizeStatus(rawStatus);
+    final info = <String, _StepInfo>{
+      for (final e in rawInfo.entries)
+        AppConstants.normalizeStatus(e.key): e.value,
+    };
+    bool reached(String key) => status == key || info.containsKey(key);
+
+    _TimelineStep step(String label, List<String> keys) => _TimelineStep(
+          label: label,
+          keys: keys,
+          reached: keys.any(reached),
+          info: keys.map((k) => info[k]).whereType<_StepInfo>().firstOrNull,
+        );
+
+    final steps = <_TimelineStep>[
+      step('Pending', ['Pending']),
+      step('Accepted', ['Accepted']),
+    ];
+
+    // Location step: show the one that applies, or both until decided
+    if (reached(AppConstants.statusTechVisit)) {
+      steps.add(step(AppConstants.statusTechVisit,
+          [AppConstants.statusTechVisit]));
+    } else if (reached(AppConstants.statusOnSite)) {
+      steps.add(step(AppConstants.statusOnSite, [AppConstants.statusOnSite]));
+    } else {
+      steps.add(step(
+          '${AppConstants.statusTechVisit} / ${AppConstants.statusOnSite}',
+          [AppConstants.statusTechVisit, AppConstants.statusOnSite]));
+    }
+
+    if (reached('Queued')) {
+      steps.add(step(AppConstants.displayLabel('Queued'), ['Queued']));
+    }
+    steps.add(step('In Process', ['In Process']));
+    if (reached('Waiting for Parts')) {
+      steps.add(step('Waiting for Parts', ['Waiting for Parts']));
+    }
+    steps.add(step('Pending Review', ['Pending Review']));
+    steps.add(step('Completed', ['Completed']));
+    return steps;
+  }
+
+  Widget _buildTimelineCard(List<_TimelineStep> steps, int currentIndex) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle(Icons.timeline_outlined, 'Repair Progress'),
+          const SizedBox(height: 18),
+          for (int i = 0; i < steps.length; i++)
+            _buildTimelineRow(
+              steps[i],
+              index: i,
+              currentIndex: currentIndex,
+              isLast: i == steps.length - 1,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineRow(
+    _TimelineStep step, {
+    required int index,
+    required int currentIndex,
+    required bool isLast,
+  }) {
+    final isCurrent = index == currentIndex;
+    final isDone = index <= currentIndex || step.reached;
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Left rail: step circle + connector line
+          SizedBox(
+            width: 28,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Tracking ID:',
-                  style: TextStyle(
-                      color: Colors.white70, fontSize: AppColors.fontLabel),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: isDone ? AppColors.dark : Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDone
+                          ? AppColors.dark
+                          : const Color(0xFFD1D5DB),
+                      width: 1.5,
+                    ),
+                    // Soft ring around the current step
+                    boxShadow: isCurrent
+                        ? const [
+                            BoxShadow(
+                                color: Color(0x33111827), spreadRadius: 4)
+                          ]
+                        : null,
+                  ),
+                  child: Center(
+                    child: isDone
+                        ? Icon(isCurrent ? Icons.circle : Icons.check,
+                            color: Colors.white, size: isCurrent ? 9 : 15)
+                        : Text('${index + 1}',
+                            style: const TextStyle(
+                                fontSize: AppColors.fontCaption,
+                                color: AppColors.textLightGray,
+                                fontWeight: FontWeight.bold)),
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  trackingId,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2),
-                ),
-                const SizedBox(height: 12),
-                _buildStatusBadge(normalizedStatus),
+                if (!isLast)
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 2,
+                        color: index < currentIndex
+                            ? AppColors.dark
+                            : const Color(0xFFE5E7EB),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(width: 14),
 
-          if (data['partsDecisionStatus'] ==
-              AppConstants.partsDecisionAwaitingCustomer) ...[
-            _CustomerPartsDecisionPanel(docId: docId, data: data),
-            const SizedBox(height: 20),
-          ],
-
-          _buildInfoCard(context, data),
-          const SizedBox(height: 20),
-
-          const Text(
-            'Repair Status:',
-            style: TextStyle(
-                fontSize: AppColors.fontTitle,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark),
-          ),
-          const SizedBox(height: 12),
-
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE5E7EB), width: 1.2),
-            ),
-            child: Column(
-              children: List.generate(allStatuses.length, (index) {
-                final isCompleted = index <= currentIndex;
-                final isCurrent = index == currentIndex;
-                final isLast = index == allStatuses.length - 1;
-                final info = stepInfo[allStatuses[index]];
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Step indicator: check circle if reached, number if not.
-                    Column(
-                      children: [
-                        Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: isCompleted
-                                ? AppColors.dark
-                                : Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isCompleted
-                                  ? AppColors.dark
-                                  : const Color(0xFFD1D5DB),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Center(
-                            child: isCompleted
-                                ? const Icon(Icons.check,
-                                    color: Colors.white, size: 14)
-                                : Text(
-                                    '${index + 1}',
-                                    style: const TextStyle(
-                                        fontSize: AppColors.fontCaption,
-                                        color: AppColors.textLightGray,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                          ),
-                        ),
-                        if (!isLast)
-                          Container(
-                            width: 2,
-                            height: 40,
-                            color: index < currentIndex
-                                ? AppColors.dark
-                                : const Color(0xFFE5E7EB),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-
-                    // Step label + date + "Current status" tag, tapos
-                    // vertical divider, tapos "Note:" column sa kanan.
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 32),
-                        child: IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Left column — status label, date, tag.
-                              Expanded(
-                                flex: 3,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      allStatuses[index],
-                                      style: TextStyle(
-                                        fontSize: AppColors.fontLabel,
-                                        fontWeight: isCurrent
-                                            ? FontWeight.bold
-                                            : FontWeight.w500,
-                                        color: isCompleted
-                                            ? AppColors.textDark
-                                            : AppColors.textLightGray,
-                                      ),
-                                    ),
-                                    if (info?.date != null)
-                                      Text(
-                                        info!.date!,
-                                        style: const TextStyle(
-                                            fontSize: AppColors.fontCaption,
-                                            color: AppColors.textLightGray),
-                                      ),
-                                    if (isCurrent)
-                                      const Text(
-                                        'Current status',
-                                        style: TextStyle(
-                                            fontSize: AppColors.fontCaption,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.dark),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              // Vertical divider between status info and note.
-                              const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 12),
-                                child: VerticalDivider(
-                                  width: 1,
-                                  thickness: 1,
-                                  color: Color(0xFFE5E7EB),
-                                ),
-                              ),
-                              
-                              Expanded(
-                                flex: 2,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Note:',
-                                      style: TextStyle(
-                                          fontSize: AppColors.fontCaption,
-                                          color: AppColors.textLightGray),
-                                    ),
-                                    if (info?.note != null)
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          info!.note!,
-                                          softWrap: true,
-                                          style: const TextStyle(
-                                              fontSize: AppColors.fontCaption,
-                                              color: AppColors.textGray),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
+          // Right side: label, date, optional note
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          step.label,
+                          style: TextStyle(
+                            fontSize: AppColors.fontBody,
+                            fontWeight:
+                                isCurrent ? FontWeight.w700 : FontWeight.w500,
+                            color: isDone
+                                ? AppColors.textDark
+                                : AppColors.textLightGray,
                           ),
                         ),
                       ),
+                      if (isCurrent) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.dark,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'Current',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (step.info?.date != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        step.info!.date!,
+                        style: const TextStyle(
+                            fontSize: AppColors.fontCaption,
+                            color: AppColors.textGray),
+                      ),
                     ),
-                  ],
-                );
-              }),
+                  if (step.info?.note != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Text(
+                        step.info!.note!,
+                        softWrap: true,
+                        style: const TextStyle(
+                            fontSize: AppColors.fontLabel,
+                            height: 1.35,
+                            color: Color(0xFF4B5563)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Shown instead of the timeline when the shop declined the request
+  Widget _buildDeclinedCard(_StepInfo? info) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.dangerBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFCA5A5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.block, color: AppColors.danger, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Request Declined',
+                    style: TextStyle(
+                        fontSize: AppColors.fontBody,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF991B1B))),
+                if (info?.note != null) ...[
+                  const SizedBox(height: 4),
+                  Text(info!.note!,
+                      style: const TextStyle(
+                          fontSize: AppColors.fontLabel,
+                          color: Color(0xFF7F1D1D))),
+                ],
+              ],
             ),
           ),
         ],
@@ -291,18 +436,29 @@ class TrackingScreen extends StatelessWidget {
   Map<String, _StepInfo> _buildStepInfo(Map<String, dynamic> data) {
     final result = <String, _StepInfo>{};
     final history = data['statusHistory'] as List<dynamic>? ?? [];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
 
     for (final entry in history) {
       final map = entry as Map<String, dynamic>;
+      // Internal reassignment after a technician declined: not part of the
+      // customer's timeline.
+      if (map['declinedBy'] != null) continue;
       final status = map['status'] as String? ?? '';
-      final label = status == 'Completed' ? 'Complete' : status;
       final timestamp = map['timestamp'] as Timestamp?;
       final note = map['note'] as String?;
 
-      result[label] = _StepInfo(
-        date: timestamp != null
-            ? '${timestamp.toDate().month}/${timestamp.toDate().day}/${timestamp.toDate().year.toString().substring(2)}'
-            : null,
+      // Clearer date format, e.g. "Oct 4, 2026"
+      String? date;
+      if (timestamp != null) {
+        final d = timestamp.toDate();
+        date = '${months[d.month - 1]} ${d.day}, ${d.year}';
+      }
+
+      result[status] = _StepInfo(
+        date: date,
         note: (note != null && note.isNotEmpty) ? note : null,
       );
     }
@@ -310,71 +466,99 @@ class TrackingScreen extends StatelessWidget {
     return result;
   }
 
+  BoxDecoration _cardDecoration() => BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x07000000),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      );
+
+  // Card title with icon box (same look as settings sections)
+  Widget _sectionTitle(IconData icon, String text) => Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 19, color: const Color(0xFF374151)),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            text,
+            style: const TextStyle(
+                fontSize: AppColors.fontSubtitle + 2,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark),
+          ),
+        ],
+      );
+
   Widget _buildInfoCard(BuildContext context, Map<String, dynamic> data) {
+    final model = (data['applianceModel'] as String?) ?? '';
+    final photoUrl = data['initialPhotoUrl'] as String?;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Repair Details:',
-            style: TextStyle(
-                fontSize: AppColors.fontTitle,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark),
-          ),
-          const SizedBox(height: 12),
-          const Divider(),
-          const SizedBox(height: 8),
+          _sectionTitle(Icons.receipt_long_outlined, 'Repair Details'),
+          const SizedBox(height: 16),
+          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          const SizedBox(height: 16),
+          _buildInfoRow(Icons.kitchen_outlined, 'Appliance',
+              data['applianceType'] ?? ''),
+          if (model.isNotEmpty)
+            _buildInfoRow(Icons.label_outline, 'Model', model),
+          _buildInfoRow(Icons.description_outlined, 'Problem',
+              data['problemDescription'] ?? ''),
           _buildInfoRow(Icons.person_outline, 'Name', data['name'] ?? ''),
           _buildInfoRow(
               Icons.phone_outlined, 'Contact', data['contactNumber'] ?? ''),
           _buildInfoRow(
               Icons.location_on_outlined, 'Address', data['address'] ?? ''),
-          _buildInfoRow(
-              Icons.kitchen, 'Appliance', data['applianceType'] ?? ''),
-          _buildInfoRow(Icons.description_outlined, 'Problem',
-              data['problemDescription'] ?? ''),
-          if (data['initialPhotoUrl'] != null &&
-              (data['initialPhotoUrl'] as String).isNotEmpty) ...[
-            const SizedBox(height: 8),
+          if (photoUrl != null && photoUrl.isNotEmpty) ...[
+            const SizedBox(height: 4),
             const Text(
-              'Submitted Photo:',
+              'Submitted Photo',
               style: TextStyle(
                   fontSize: AppColors.fontCaption,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textGray),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             GestureDetector(
-              onTap: () => _openPhotoViewer(
-                  context, data['initialPhotoUrl'] as String),
+              onTap: () => _openPhotoViewer(context, photoUrl),
               child: Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     child: Image.network(
-                      data['initialPhotoUrl'],
+                      photoUrl,
                       width: double.infinity,
-                      height: 160,
+                      height: 170,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, progress) {
                         if (progress == null) return child;
                         return Container(
-                          height: 160,
+                          height: 170,
                           alignment: Alignment.center,
                           child: const CircularProgressIndicator(
                               strokeWidth: 2, color: AppColors.dark),
                         );
                       },
-                      errorBuilder: (context, error, stackTrace) =>
-                          Container(
+                      errorBuilder: (context, error, stackTrace) => Container(
                         height: 100,
                         alignment: Alignment.center,
                         color: const Color(0xFFF3F4F6),
@@ -387,8 +571,7 @@ class TrackingScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Tap-to-zoom hint — malinaw sa customer na pwedeng
-                  // i-tap ang photo para makita nang mas malapitan.
+                  // Tap-to-zoom hint
                   Positioned(
                     right: 8,
                     bottom: 8,
@@ -421,29 +604,34 @@ class TrackingScreen extends StatelessWidget {
     );
   }
 
+  // Label on top, value below: easier to read than a cramped side-by-side row
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: AppColors.textGray),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 70,
-            child: Text(
-              label,
-              style: const TextStyle(
-                  fontSize: AppColors.fontCaption, color: AppColors.textGray),
-            ),
-          ),
+          Icon(icon, size: 18, color: AppColors.textGray),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                  fontSize: AppColors.fontCaption,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textDark),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                      fontSize: AppColors.fontCaption,
+                      color: AppColors.textGray),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value.isEmpty ? '—' : value,
+                  style: const TextStyle(
+                      fontSize: AppColors.fontBody - 1,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textDark),
+                ),
+              ],
             ),
           ),
         ],
@@ -453,41 +641,37 @@ class TrackingScreen extends StatelessWidget {
 
   Widget _buildStatusBadge(String status) {
     Color bgColor;
-    Color textColor;
+    const textColor = Colors.white;
 
     switch (status) {
-      case 'Pending':
-        bgColor = Colors.white24;
-        textColor = Colors.white;
-        break;
       case 'Accepted':
+      case 'Completed':
         bgColor = AppColors.success;
-        textColor = Colors.white;
         break;
-      case 'In Home':
-      case 'In Shop':
+      case 'Tech Visit':
+      case 'On-Site':
+      case 'In Home': // old value, until migrated
+      case 'In Shop': // old value, until migrated
         bgColor = const Color(0xFF5B21B6);
-        textColor = Colors.white;
         break;
       case 'In Process':
         bgColor = const Color(0xFF9D174D);
-        textColor = Colors.white;
         break;
       case 'Waiting for Parts':
+      case 'Declined':
         bgColor = AppColors.danger;
-        textColor = Colors.white;
         break;
-      case 'Complete':
-        bgColor = AppColors.success;
-        textColor = Colors.white;
+      case 'Queued':
+      case 'Pending Review':
+        bgColor = const Color(0xFFB45309);
         break;
       default:
+        // Pending and anything unknown
         bgColor = Colors.white24;
-        textColor = Colors.white;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(20),
@@ -496,17 +680,18 @@ class TrackingScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 6,
-            height: 6,
+            width: 7,
+            height: 7,
             decoration: const BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Text(
-            status,
-            style: TextStyle(
+            // Queued is shown to customers as "Waiting to Process"
+            AppConstants.displayLabel(status),
+            style: const TextStyle(
                 fontSize: AppColors.fontLabel,
                 fontWeight: FontWeight.w600,
                 color: textColor),
@@ -515,6 +700,20 @@ class TrackingScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One row in the status timeline.
+class _TimelineStep {
+  final String label;
+  final List<String> keys; // status values that map to this step
+  final bool reached; // status/history shows this step was reached
+  final _StepInfo? info;
+  const _TimelineStep({
+    required this.label,
+    required this.keys,
+    required this.reached,
+    this.info,
+  });
 }
 
 /// Holds the date/note text shown for one step in the status timeline.
@@ -589,6 +788,19 @@ class _CustomerPartsDecisionPanelState
         docId: widget.docId,
         partsSource: partsSource,
       );
+
+      try {
+        await FirestoreService().createNotification(
+          recipientType: 'admin',
+          title: 'Customer chose part source',
+          body: '${widget.data['name'] ?? 'A customer'} chose: $partsSource '
+              'for ${widget.data['applianceType'] ?? 'appliance'} '
+              '(ID: ${widget.data['trackingId'] ?? ''}).',
+          trackingId: widget.data['trackingId'] as String?,
+        );
+      } catch (_) {
+        // Non-fatal.
+      }
 
       // Best-effort alert to the shop — a customer decision arriving
       // silently is exactly the gap we're closing here, but a failed
@@ -717,7 +929,7 @@ class _CustomerPartsDecisionPanelState
           Text(
             _deadlineLabel(),
             style: const TextStyle(
-                fontSize: 11, color: Color(0xFF9A3412)),
+                fontSize: AppColors.fontCaption, color: Color(0xFF9A3412)),
           ),
         ],
       ),

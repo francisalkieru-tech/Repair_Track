@@ -47,14 +47,25 @@ class CompletedScreen extends StatelessWidget {
                       ? 3
                       : 2;
 
+              // Phones: one card per row with a fixed height. A ratio-based
+              // 2-column grid made the cards too short and overflowed.
+              final isPhone = width < 600;
+
               return GridView.builder(
                 padding: const EdgeInsets.all(16),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.7,
-                ),
+                gridDelegate: isPhone
+                    ? const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 1,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        mainAxisExtent: 172,
+                      )
+                    : SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.7,
+                      ),
                 itemCount: completedDocs.length,
                 itemBuilder: (context, index) {
                   final doc = completedDocs[index];

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../services/auth_service.dart';
+import '../../utils/constants.dart';
 import '../../utils/technician_availability.dart';
 import 'admin_theme.dart';
+import '../../widget/technician_resume_screen.dart';
 
 class TechniciansScreen extends StatefulWidget {
   const TechniciansScreen({super.key});
@@ -72,15 +74,22 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                       builder: (context, constraints) {
                         final crossAxisCount =
                             (constraints.maxWidth / 340).floor().clamp(1, 3);
+                        final isPhone = constraints.maxWidth < 600;
                         return GridView.builder(
                           padding: const EdgeInsets.all(16),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 2.3,
-                          ),
+                          gridDelegate: isPhone
+                              ? const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 1,
+                                  mainAxisSpacing: 12,
+                                  crossAxisSpacing: 12,
+                                  mainAxisExtent: 180,
+                                )
+                              : SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  mainAxisSpacing: 12,
+                                  crossAxisSpacing: 12,
+                                  childAspectRatio: 1.9,
+                                ),
                           itemCount: techs.length,
                           itemBuilder: (context, index) {
                             final doc = techs[index];
@@ -95,10 +104,10 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                               docId: doc.id,
                               data: data,
                               activeJobCount: assignedJobs.length,
-                              isAvailable: isTechnicianAvailable(
-                                allData,
-                                data['name'] ?? '',
-                              ),
+                              activeJobs: assignedJobs,
+                              // on duty AND not blocked by job rules
+                              isAvailable:
+                                  isTechnicianAssignable(allData, data),
                             );
                           },
                         );
@@ -119,12 +128,14 @@ class _TechnicianCard extends StatelessWidget {
   final String docId;
   final Map<String, dynamic> data;
   final int activeJobCount;
+  final List<Map<String, dynamic>> activeJobs;
   final bool isAvailable;
 
   const _TechnicianCard({
     required this.docId,
     required this.data,
     required this.activeJobCount,
+    required this.activeJobs,
     required this.isAvailable,
   });
 
@@ -139,7 +150,7 @@ class _TechnicianCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => _showTechnicianDetails(context, data, activeJobCount, isAvailable),
+        onTap: () => _showTechnicianDetails(context, docId, data, activeJobCount, isAvailable, activeJobs),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(
@@ -168,8 +179,19 @@ class _TechnicianCard extends StatelessWidget {
               ),
               Text(
                 'Specialization/Type: '
-                '${specialization.isEmpty ? 'General repairs' : specialization}',
+                '${technicianSpecializations(data).isEmpty ? 'General repairs' : technicianSpecializations(data).join(', ')}',
                 style: const TextStyle(fontSize: 11, color: Color(0xFF444444)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              // What the technician is doing right now (monitoring)
+              Text(
+                _workingOnText(activeJobs),
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF222222)),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -193,7 +215,7 @@ class _TechnicianCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          isAvailable ? 'Available' : 'Unavailable',
+                          _availabilityText(data, isAvailable),
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -212,7 +234,7 @@ class _TechnicianCard extends StatelessWidget {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () =>
-                          _showTechnicianDetails(context, data, activeJobCount, isAvailable),
+                          _showTechnicianDetails(context, docId, data, activeJobCount, isAvailable, activeJobs),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(
                             horizontal: 14, vertical: 8),
@@ -237,8 +259,26 @@ class _TechnicianCard extends StatelessWidget {
   }
 }
 
-void _showTechnicianDetails(BuildContext context, Map<String, dynamic> data,
-    int activeJobCount, bool isAvailable) {
+// Pill text: clocked out → Off duty, otherwise Available / Busy.
+String _availabilityText(Map<String, dynamic> data, bool isAvailable) {
+  if (!isTechnicianClockedIn(data)) return 'Off duty';
+  return isAvailable ? 'Available' : 'Busy';
+}
+
+String _jobLine(Map<String, dynamic> job) =>
+    'Ticket ${job['trackingId'] ?? ''} • ${job['applianceType'] ?? ''} — '
+    '${AppConstants.displayLabel((job['status'] ?? '') as String)}';
+
+// "Working on: Ticket ABC • Refrigerator — In Process (+1 more)"
+String _workingOnText(List<Map<String, dynamic>> jobs) {
+  if (jobs.isEmpty) return 'Working on: no active job';
+  final extra = jobs.length > 1 ? ' (+${jobs.length - 1} more)' : '';
+  return 'Working on: ${_jobLine(jobs.first)}$extra';
+}
+
+void _showTechnicianDetails(BuildContext context, String docId,
+    Map<String, dynamic> data, int activeJobCount, bool isAvailable,
+    List<Map<String, dynamic>> activeJobs) {
   final name = data['name'] ?? '';
   final phone = data['phoneNumber'] ?? '';
   final email = data['email'] ?? '';
@@ -274,7 +314,7 @@ void _showTechnicianDetails(BuildContext context, Map<String, dynamic> data,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          isAvailable ? 'Available' : 'Unavailable',
+                          _availabilityText(data, isAvailable),
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -304,7 +344,13 @@ void _showTechnicianDetails(BuildContext context, Map<String, dynamic> data,
                       color: Color(0xFF111827),
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
+                  _DutyMonitor(
+                    docId: docId,
+                    data: data,
+                    activeJobs: activeJobs,
+                  ),
+                  const SizedBox(height: 14),
                   _DetailRow(
                       icon: Icons.call_outlined,
                       label: 'Phone Number',
@@ -317,15 +363,15 @@ void _showTechnicianDetails(BuildContext context, Map<String, dynamic> data,
                   _DetailRow(
                       icon: Icons.build_outlined,
                       label: 'Specialization',
-                      value: specialization.isEmpty
+                      value: technicianSpecializations(data).isEmpty
                           ? 'General repairs'
-                          : specialization),
+                          : technicianSpecializations(data).join(', ')),
                   _DetailRow(
                     icon: Icons.assignment_outlined,
                     label: 'Current Job Load',
                     value:
                         '$activeJobCount active job${activeJobCount == 1 ? '' : 's'} '
-                        '(unavailable while on an In Home job, or at '
+                        '(unavailable while on a Tech Visit, or at '
                         '$kMaxActiveJobsPerTechnician other active jobs)',
                   ),
                   if (notes.toString().isNotEmpty)
@@ -333,6 +379,22 @@ void _showTechnicianDetails(BuildContext context, Map<String, dynamic> data,
                         icon: Icons.notes_outlined,
                         label: 'Notes / Remarks',
                         value: notes),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final nav = Navigator.of(context);
+                        nav.pop();
+                        nav.push(MaterialPageRoute(
+                          builder: (_) => TechnicianResumeScreen(
+                              technicianDocId: docId, isAdmin: true),
+                        ));
+                      },
+                      icon: const Icon(Icons.badge_outlined, size: 18),
+                      label: const Text('View Resume & Certificates'),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -341,6 +403,91 @@ void _showTechnicianDetails(BuildContext context, Map<String, dynamic> data,
       ),
     ),
   );
+}
+
+// Admin monitoring: duty state, what the technician is working on, and the
+// clock in / clock out log (written by the technician's own duty button).
+class _DutyMonitor extends StatelessWidget {
+  final String docId;
+  final Map<String, dynamic> data;
+  final List<Map<String, dynamic>> activeJobs;
+
+  const _DutyMonitor({
+    required this.docId,
+    required this.data,
+    required this.activeJobs,
+  });
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _stamp(DateTime t) {
+    final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    return '${_months[t.month - 1]} ${t.day}, $hour:$minute '
+        '${t.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  Widget _heading(String text) => Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 4),
+        child: Text(
+          text,
+          style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF374151)),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final since = technicianClockedInSince(data);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _heading('Duty'),
+        Text(
+          since != null ? 'On duty since ${_stamp(since)}' : 'Off duty',
+          style: const TextStyle(fontSize: 12.5),
+        ),
+        _heading('Currently working on'),
+        if (activeJobs.isEmpty)
+          const Text('No active job', style: TextStyle(fontSize: 12.5))
+        else
+          for (final job in activeJobs)
+            Text(_jobLine(job), style: const TextStyle(fontSize: 12.5)),
+        _heading('Duty log'),
+        StreamBuilder<QuerySnapshot>(
+          stream: FirestoreService().streamDutyLogs(docId, limit: 10),
+          builder: (context, snapshot) {
+            final logs = snapshot.data?.docs ?? [];
+            if (logs.isEmpty) {
+              return const Text('No clock in / out yet.',
+                  style: TextStyle(fontSize: 12.5, color: Color(0xFF6B7280)));
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final doc in logs)
+                  Builder(builder: (context) {
+                    final log = doc.data() as Map<String, dynamic>;
+                    final ts = log['timestamp'];
+                    return Text(
+                      '${log['type'] == 'clock_in' ? 'Clock in ' : 'Clock out'}'
+                      ' • ${ts is Timestamp ? _stamp(ts.toDate()) : ''}',
+                      style: const TextStyle(fontSize: 12.5),
+                    );
+                  }),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
 }
 
 class _DetailRow extends StatelessWidget {

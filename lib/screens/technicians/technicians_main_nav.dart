@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/colors.dart';
+import '../../widget/duty_clock_card.dart';
 import '../../widget/tech_chat.dart';
 import '../../widget/notification_bell.dart';
 import 'technicians_pending.dart';
@@ -107,6 +108,10 @@ class _TechnicianMainNavState extends State<TechnicianMainNav> {
                                   technicianDocId: resolvedId),
                             ),
                           ),
+                        ),
+                        DutyClockCard(
+                          technicianDocId: resolvedId,
+                          data: techSnapshot.data?.data(),
                         ),
                         Expanded(
                           child:

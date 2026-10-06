@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../utils/constants.dart';
 import '../../widget/notification_bell.dart';
 
 const Color kAdminBrand = Colors.black;
@@ -15,8 +16,10 @@ const Color kAdminTextGray = Color(0xFF6B7280);
       return (const Color(0xFFFEF3C7), const Color(0xFF92400E));
     case 'Accepted':
       return (const Color(0xFFDBEAFE), const Color(0xFF1E40AF));
-    case 'In Home':
-    case 'In Shop':
+    case 'Tech Visit':
+    case 'On-Site':
+    case 'In Home': // old value, until migrated
+    case 'In Shop': // old value, until migrated
       return (const Color(0xFFEDE9FE), const Color(0xFF5B21B6));
     case 'Queued':
       return (const Color(0xFFF3F4F6), const Color(0xFF4B5563));
@@ -32,6 +35,67 @@ const Color kAdminTextGray = Color(0xFF6B7280);
       return (const Color(0xFFFEE2E2), const Color(0xFF7F1D1D));
     default:
       return (const Color(0xFFF3F4F6), const Color(0xFF374151));
+  }
+}
+
+/// Monochrome ticket-stage badge used in the dashboard lists:
+/// Open / In-Process / Waiting for Parts / Completed (+ Declined).
+/// Pass the stored status; it is converted with AppConstants.ticketStage.
+class TicketBadge extends StatelessWidget {
+  final String status;
+
+  const TicketBadge({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = AppConstants.ticketStage(status);
+
+    Color bg;
+    Color fg;
+    Color border;
+    switch (stage) {
+      case AppConstants.stageOpen: // outlined
+        bg = Colors.white;
+        fg = Colors.black;
+        border = Colors.black;
+        break;
+      case AppConstants.stageInProcess: // solid black
+        bg = Colors.black;
+        fg = Colors.white;
+        border = Colors.black;
+        break;
+      case AppConstants.stageWaitingParts: // solid gray
+        bg = const Color(0xFF6B6B6B);
+        fg = Colors.white;
+        border = const Color(0xFF6B6B6B);
+        break;
+      case AppConstants.stageCompleted: // light gray
+        bg = const Color(0xFFE5E5E5);
+        fg = const Color(0xFF333333);
+        border = const Color(0xFFBDBDBD);
+        break;
+      default: // Declined
+        bg = Colors.white;
+        fg = const Color(0xFF777777);
+        border = const Color(0xFFBDBDBD);
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        stage,
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
+      ),
+    );
   }
 }
 
@@ -152,21 +216,26 @@ class _AdminTopBarState extends State<AdminTopBar> {
     'December'
   ];
 
-  String get _dateStr =>
-      '${_days[_now.weekday - 1]}, ${_months[_now.month - 1]} ${_now.day}, ${_now.year}';
+  String _dateStr(bool compact) => compact
+      ? '${_days[_now.weekday - 1].substring(0, 3)}, '
+          '${_months[_now.month - 1].substring(0, 3)} ${_now.day}'
+      : '${_days[_now.weekday - 1]}, ${_months[_now.month - 1]} ${_now.day}, ${_now.year}';
 
-  String get _timeStr {
+  String _timeStr(bool compact) {
     final hour = _now.hour % 12 == 0 ? 12 : _now.hour % 12;
     final minute = _now.minute.toString().padLeft(2, '0');
     final second = _now.second.toString().padLeft(2, '0');
     final ampm = _now.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute:$second $ampm';
+    return compact ? '$hour:$minute $ampm' : '$hour:$minute:$second $ampm';
   }
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.of(context).size.width < 600;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(14, 10, 10, 10)
+          : const EdgeInsets.fromLTRB(20, 16, 20, 16),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: kAdminCardBorder)),
@@ -198,8 +267,10 @@ class _AdminTopBarState extends State<AdminTopBar> {
                   children: [
                     Text(
                       greeting,
-                      style: const TextStyle(
-                        fontSize: 20,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: compact ? 16 : 20,
                         fontWeight: FontWeight.bold,
                         color: kAdminTextDark,
                       ),
@@ -208,7 +279,7 @@ class _AdminTopBarState extends State<AdminTopBar> {
                     Row(
                       children: [
                         Text(
-                          _dateStr,
+                          _dateStr(compact),
                           style: const TextStyle(
                             fontSize: 12,
                             color: kAdminTextGray,
@@ -224,12 +295,16 @@ class _AdminTopBarState extends State<AdminTopBar> {
                             ),
                           ),
                         ),
-                        Text(
-                          _timeStr,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: kAdminTextGray,
+                        Flexible(
+                          child: Text(
+                            _timeStr(compact),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: kAdminTextGray,
+                            ),
                           ),
                         ),
                       ],
@@ -243,7 +318,7 @@ class _AdminTopBarState extends State<AdminTopBar> {
                 onTap: widget.onAvatarTap,
                 customBorder: const CircleBorder(),
                 child: CircleAvatar(
-                  radius: 20,
+                  radius: compact ? 17 : 20,
                   backgroundColor: const Color(0xFFF3F4F6),
                   backgroundImage:
                       (logoUrl != null && logoUrl.isNotEmpty)

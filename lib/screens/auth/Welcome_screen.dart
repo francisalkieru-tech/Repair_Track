@@ -42,9 +42,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // ---------------------------------------------------------
-                  // APP LOGO / ANIMATION
-                  // ---------------------------------------------------------
                   Container(
                     width: 100,
                     height: 100,
@@ -90,7 +87,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   const SizedBox(height: 8),
 
                   const Text(
-                    'Track, and Monitor Repairs',
+                    'Track and monitor your repairs',
                     style: TextStyle(
                       fontSize: AppColors.fontSubtitle,
                       color: AppColors.textGray,
@@ -99,9 +96,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                   const SizedBox(height: 32),
 
-                  // ---------------------------------------------------------
-                  // LOGIN OPTIONS CARD
-                  // ---------------------------------------------------------
                   Card(
                     elevation: 8,
                     shadowColor: Colors.grey.withOpacity(0.5),
@@ -114,96 +108,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       child: Column(
                         children: [
                           const Text(
-                            'Welcome!',
-                            style: TextStyle(
-                              fontSize: AppColors.fontTitle,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          const Text(
-                            'Choose an option to get started',
-                            style: TextStyle(
-                              fontSize: AppColors.fontSubtitle,
-                              color: AppColors.textGray,
-                            ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // Customer
-                          _OptionButton(
-                            icon: Icons.person,
-                            title: 'Login as Customer',
-                            subtitle: 'Already have an account',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const LoginScreen(role: 'customer'),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          // Admin
-                          _OptionButton(
-                            icon: Icons.shield,
-                            title: 'Admin',
-                            subtitle: 'Admin access only',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const LoginScreen(role: 'admin'),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          // Technician
-                          _OptionButton(
-                            icon: Icons.build,
-                            title: 'Technician',
-                            subtitle: 'Technician access only',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const LoginScreen(role: 'technician'),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ---------------------------------------------------------
-                  // CREATE ACCOUNT CARD
-                  // ---------------------------------------------------------
-                  Card(
-                    elevation: 8,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(
-                        color: Color.fromARGB(255, 94, 94, 94),
-                        width: 2,
-                      ),
-                    ),
-                    color: AppColors.background,
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          const Text(
-                            'New to RepairTrack?',
+                            'Already have an account?',
                             style: TextStyle(
                               fontSize: AppColors.fontLabel,
                               fontWeight: FontWeight.w500,
@@ -219,8 +124,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               onPressed: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) =>
-                                      const CustomerRegisterScreen(),
+                                  builder: (_) => const LoginScreen(),
                                 ),
                               ),
                               style: ElevatedButton.styleFrom(
@@ -232,11 +136,75 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                 ),
                               ),
                               child: const Text(
-                                'Create New Account',
+                                'Sign In',
                                 style: TextStyle(
                                   fontSize: AppColors.fontBody,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          const Text(
+                            'Customers, technicians and admins can sign in here',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: AppColors.fontCaption,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          Row(
+                            children: const [
+                              Expanded(child: Divider()),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12),
+                                child: Text(
+                                  'New to RepairTrack?',
+                                  style: TextStyle(
+                                    fontSize: AppColors.fontCaption,
+                                    color: AppColors.textGray,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider()),
+                            ],
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const CustomerRegisterScreen(),
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.dark,
+                                side: const BorderSide(
+                                  color: AppColors.dark,
+                                  width: 1.5,
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Create New Account',
+                                style: TextStyle(
+                                  fontSize: AppColors.fontBody,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -356,78 +324,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ===========================================================================
-// LOGIN OPTION BUTTON
-// ===========================================================================
-
-class _OptionButton extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _OptionButton({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.dark,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 26,
-              color: Colors.white,
-            ),
-
-            const SizedBox(width: 16),
-
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: AppColors.fontBody,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: AppColors.fontCaption,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Icon(
-              Icons.chevron_right,
-              color: Colors.white70,
-            ),
-          ],
         ),
       ),
     );

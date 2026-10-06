@@ -21,7 +21,7 @@ class RepairHistoryScreen extends StatelessWidget {
 
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: AppColors.darkGradient,
@@ -50,7 +50,7 @@ class RepairHistoryScreen extends StatelessWidget {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          'Monitor your repair progress',
+                          'Your completed and declined repairs',
                           style: TextStyle(
                               fontSize: AppColors.fontLabel,
                               color: Colors.white70),
@@ -132,103 +132,149 @@ class RepairHistoryScreen extends StatelessWidget {
               itemBuilder: (context, index) {
                 final data = docs[index].data() as Map<String, dynamic>;
                 final createdAt = data['createdAt'] as Timestamp?;
-                final date = createdAt != null
-                    ? '${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year}'
-                    : 'N/A';
+                // Readable date, e.g. "Oct 4, 2026"
+                const months = [
+                  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                ];
+                String date = 'N/A';
+                if (createdAt != null) {
+                  final d = createdAt.toDate();
+                  date = '${months[d.month - 1]} ${d.day}, ${d.year}';
+                }
 
                 final status = data['status'] as String? ?? 'Completed';
                 final isDeclined = status == 'Declined';
+                final problem = data['problemDescription'] as String? ?? '';
+                final trackingId = data['trackingId'] as String? ?? '';
 
-                return GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TrackingScreen(
-                        trackingId: data['trackingId'],
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              TrackingScreen(trackingId: trackingId),
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border:
+                              Border.all(color: const Color(0xFFE5E7EB)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x07000000),
+                              blurRadius: 12,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Row 1: appliance + status pill
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    data['applianceType'] ?? 'Unknown',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: AppColors.fontSubtitle + 2,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textDark),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: isDeclined
+                                        ? AppColors.dangerBg
+                                        : const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isDeclined
+                                            ? Icons.cancel_outlined
+                                            : Icons.check_circle_outline,
+                                        size: 14,
+                                        color: isDeclined
+                                            ? AppColors.danger
+                                            : AppColors.success,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        status,
+                                        style: TextStyle(
+                                            color: isDeclined
+                                                ? AppColors.danger
+                                                : AppColors.success,
+                                            fontSize: AppColors.fontCaption,
+                                            fontWeight: FontWeight.w700),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (problem.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                problem,
+                                style: const TextStyle(
+                                    fontSize: AppColors.fontLabel,
+                                    height: 1.35,
+                                    color: AppColors.textGray),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            const Divider(
+                                height: 1, color: Color(0xFFE5E7EB)),
+                            const SizedBox(height: 10),
+                            // Row 2: tracking ID + date
+                            Row(
+                              children: [
+                                const Icon(Icons.tag,
+                                    size: 14, color: AppColors.textGray),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    trackingId.isEmpty ? 'N/A' : trackingId,
+                                    style: const TextStyle(
+                                        fontSize: AppColors.fontCaption,
+                                        color: AppColors.textGray),
+                                  ),
+                                ),
+                                const Icon(Icons.event_outlined,
+                                    size: 14, color: AppColors.textGray),
+                                const SizedBox(width: 4),
+                                Text(
+                                  date,
+                                  style: const TextStyle(
+                                      fontSize: AppColors.fontCaption,
+                                      color: AppColors.textGray),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  child: Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isDeclined
-                                  ? const Color(0xFFFEE2E2)
-                                  : const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              status,
-                              style: TextStyle(
-                                  color: isDeclined
-                                      ? AppColors.danger
-                                      : AppColors.success,
-                                  fontSize: AppColors.fontCaption,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            date,
-                            style: const TextStyle(
-                                fontSize: AppColors.fontCaption,
-                                color: AppColors.textLightGray),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        data['applianceType'] ?? 'Unknown',
-                        style: const TextStyle(
-                            fontSize: AppColors.fontBody,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textDark),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        data['problemDescription'] ?? '',
-                        style: const TextStyle(
-                            fontSize: AppColors.fontLabel,
-                            color: AppColors.textGray),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.tag,
-                              size: 14, color: AppColors.textLightGray),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Tracking ID: ${data['trackingId'] ?? 'N/A'}',
-                            style: const TextStyle(
-                                fontSize: AppColors.fontCaption,
-                                color: AppColors.textLightGray),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
                   ),
                 );
               },

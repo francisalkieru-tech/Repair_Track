@@ -35,7 +35,7 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
         user = await FirebaseAuth.instance
             .authStateChanges()
             .first
-            .timeout(const Duration(seconds: 3));
+            .timeout(const Duration(seconds: 10));
       } catch (_) {
         user = FirebaseAuth.instance.currentUser;
       }

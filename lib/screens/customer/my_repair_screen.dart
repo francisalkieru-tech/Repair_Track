@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../tracking/tracking_screen.dart';
 import '../../utils/colors.dart';
+import '../../utils/constants.dart';
 import '../../utils/ui_widgets.dart';
 
 class MyRepairScreen extends StatelessWidget {
@@ -35,11 +36,16 @@ class MyRepairScreen extends StatelessWidget {
         return const Color(0xFFF59E0B);
       case 'Accepted':
         return const Color(0xFF3B82F6);
-      case 'In Home':
-      case 'In Shop':
+      case 'Tech Visit':
+      case 'On-Site':
+      case 'In Home': // old value, until migrated
+      case 'In Shop': // old value, until migrated
         return const Color(0xFF6366F1);
       case 'In Process':
         return const Color(0xFFEC4899);
+      case 'Queued':
+      case 'Pending Review':
+        return const Color(0xFFB45309);
       case 'Waiting for Parts':
         return const Color(0xFFEF4444);
       case 'Completed':
@@ -64,7 +70,7 @@ class MyRepairScreen extends StatelessWidget {
             // Header
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: AppColors.darkGradient,
@@ -90,7 +96,7 @@ class MyRepairScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
 
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
@@ -167,7 +173,7 @@ class MyRepairScreen extends StatelessWidget {
                       await Future.delayed(const Duration(milliseconds: 600));
                     },
                     child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: sortedDocs.length,
                       separatorBuilder: (_, __) =>
@@ -180,82 +186,183 @@ class MyRepairScreen extends StatelessWidget {
                         final applianceType =
                             data['applianceType'] as String? ?? 'Repair';
 
-                        return GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TrackingScreen(
-                                trackingId: data['trackingId'],
+                        final trackingId =
+                            data['trackingId'] as String? ?? '';
+                        final problem =
+                            data['problemDescription'] as String? ?? '';
+                        final needsAction = data['partsDecisionStatus'] ==
+                            AppConstants.partsDecisionAwaitingCustomer;
+                        final color = _colorForStatus(status);
+
+                        return Material(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    TrackingScreen(trackingId: trackingId),
                               ),
                             ),
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: const Color(0xFFE5E7EB)),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: const Color(0xFF111827),
-                                        width: 1.5),
-                                  ),
-                                  child: Icon(
-                                    _iconForAppliance(applianceType),
-                                    color: const Color(0xFF111827),
-                                    size: 22,
-                                  ),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                // Orange border when the customer must act
+                                border: Border.all(
+                                  color: needsAction
+                                      ? const Color(0xFFFDBA74)
+                                      : const Color(0xFFE5E7EB),
+                                  width: needsAction ? 1.4 : 1,
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x07000000),
+                                    blurRadius: 12,
+                                    offset: Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Info: appliance + tracking ID + status
+                                  Row(
                                     children: [
-                                      Text(
-                                        applianceType,
-                                        style: const TextStyle(
-                                          fontSize: AppColors.fontBody,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.textDark,
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF3F4F6),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: Icon(
+                                          _iconForAppliance(applianceType),
+                                          color: const Color(0xFF111827),
+                                          size: 24,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Container(
-                                            width: 8,
-                                            height: 8,
-                                            decoration: BoxDecoration(
-                                              color:
-                                                  _colorForStatus(status),
-                                              shape: BoxShape.circle,
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              applianceType,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize:
+                                                    AppColors.fontSubtitle + 2,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textDark,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            status,
-                                            style: const TextStyle(
-                                              fontSize: AppColors.fontLabel,
-                                              color: AppColors.textGray,
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'ID: $trackingId',
+                                              style: const TextStyle(
+                                                fontSize:
+                                                    AppColors.fontCaption,
+                                                color: AppColors.textGray,
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      // Status pill
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: color.withValues(alpha: 0.14),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 7,
+                                              height: 7,
+                                              decoration: BoxDecoration(
+                                                color: color,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              AppConstants.displayLabel(
+                                                  status),
+                                              style: TextStyle(
+                                                fontSize:
+                                                    AppColors.fontCaption,
+                                                fontWeight: FontWeight.w700,
+                                                color: color,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                const Icon(Icons.chevron_right,
-                                    color: Color(0xFF9CA3AF)),
-                              ],
+                                  if (problem.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      problem,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: AppColors.fontLabel,
+                                        height: 1.35,
+                                        color: Color(0xFF4B5563),
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 12),
+                                  const Divider(
+                                      height: 1, color: Color(0xFFE5E7EB)),
+                                  const SizedBox(height: 12),
+
+                                  // Action row: separate from the info above
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        needsAction
+                                            ? Icons.priority_high_rounded
+                                            : Icons.timeline_outlined,
+                                        size: 16,
+                                        color: needsAction
+                                            ? const Color(0xFF9A3412)
+                                            : AppColors.textGray,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          needsAction
+                                              ? 'Action needed: choose who supplies the part'
+                                              : 'View repair progress',
+                                          style: TextStyle(
+                                            fontSize: AppColors.fontLabel,
+                                            fontWeight: FontWeight.w600,
+                                            color: needsAction
+                                                ? const Color(0xFF9A3412)
+                                                : AppColors.textDark,
+                                          ),
+                                        ),
+                                      ),
+                                      const Icon(Icons.chevron_right,
+                                          size: 20,
+                                          color: Color(0xFF9CA3AF)),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );

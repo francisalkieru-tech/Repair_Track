@@ -5,6 +5,7 @@ import 'requests_screen.dart';
 import 'completed_screen.dart';
 import 'technicians_screen.dart';
 import 'schedule_screen.dart';
+import 'activity_screen.dart';
 import 'settings_screen.dart';
 import '../../widget/tech_chat.dart';
 
@@ -17,6 +18,14 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _selectedIndex = 0;
+  int _requestsTab = 0; // tab the Repair Request page opens on
+
+  // Go to a page; [tab] only matters for Repair Request (0 New, 1 Accepted,
+  // 2 In Process). Normal menu taps always open its first tab.
+  void _goTo(int index, {int tab = 0}) => setState(() {
+        _selectedIndex = index;
+        _requestsTab = tab;
+      });
 
   static const _sections = [
     _NavItem('Dashboard', Icons.dashboard_rounded),
@@ -24,21 +33,89 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _NavItem('Completed', Icons.check_circle_outline_rounded),
     _NavItem('Technicians', Icons.engineering_rounded),
     _NavItem('Schedule', Icons.calendar_month_rounded),
+    _NavItem('Activity', Icons.history_rounded),
   ];
 
   static const _settingsItem = _NavItem('Settings', Icons.settings_rounded);
-  static const _settingsIndex = 5;
+  static const _settingsIndex = 6;
 
   static const _allSections = [..._sections, _settingsItem];
 
+  // Phones: 7 tabs don't fit in one bottom bar, so show the 4 most-used pages
+  // and tuck the rest (Completed, Activity, Settings) under "More".
+  static const _mobilePrimary = [0, 1, 3, 4];
+  static const _mobileLabels = {
+    0: 'Dashboard',
+    1: 'Requests',
+    3: 'Technicians',
+    4: 'Schedule',
+  };
+  static const _moreIndexes = [2, 5, 6];
+
+  Future<void> _showMoreSheet() async {
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: kAdminCardBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              for (final i in _moreIndexes)
+                ListTile(
+                  leading: Icon(_allSections[i].icon,
+                      color: i == _selectedIndex
+                          ? Colors.black
+                          : kAdminTextGray),
+                  title: Text(
+                    _allSections[i].label,
+                    style: TextStyle(
+                      fontWeight: i == _selectedIndex
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      color: kAdminTextDark,
+                    ),
+                  ),
+                  trailing: i == _selectedIndex
+                      ? const Icon(Icons.check, size: 18)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, i),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked != null && mounted) _goTo(picked);
+  }
+
   List<Widget> get _pages => [
         DashboardScreen(
-          onNavigate: (i) => setState(() => _selectedIndex = i),
+          onNavigate: (i) => _goTo(i),
+          // Active Jobs card → straight to the In Process tab
+          onOpenRequestsTab: (tab) => _goTo(1, tab: tab),
         ),
-        const RequestsScreen(),
+        RequestsScreen(
+          key: ValueKey('requests-$_requestsTab'),
+          initialTab: _requestsTab,
+        ),
         const CompletedScreen(),
         const TechniciansScreen(),
         const ScheduleScreen(),
+        const ActivityScreen(),
         const SettingsScreen(),
       ];
 
@@ -59,7 +136,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         settingsItem: _settingsItem,
                         settingsIndex: _settingsIndex,
                         selectedIndex: _selectedIndex,
-                        onSelect: (i) => setState(() => _selectedIndex = i),
+                        onSelect: (i) => _goTo(i),
                       ),
                       Expanded(
                         child: Column(
@@ -93,21 +170,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       bottomNavigationBar: isWide
           ? null
           : NavigationBar(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+              selectedIndex: _mobilePrimary.contains(_selectedIndex)
+                  ? _mobilePrimary.indexOf(_selectedIndex)
+                  : _mobilePrimary.length, // "More" is highlighted
+              onDestinationSelected: (i) {
+                if (i < _mobilePrimary.length) {
+                  _goTo(_mobilePrimary[i]);
+                } else {
+                  _showMoreSheet();
+                }
+              },
               backgroundColor: Colors.white,
               indicatorColor: Colors.black,
               height: 64,
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              destinations: _allSections
-                  .map(
-                    (s) => NavigationDestination(
-                      icon: Icon(s.icon, color: kAdminTextGray),
-                      selectedIcon: Icon(s.icon, color: Colors.white),
-                      label: s.label,
-                    ),
-                  )
-                  .toList(),
+              destinations: [
+                for (final i in _mobilePrimary)
+                  NavigationDestination(
+                    icon: Icon(_allSections[i].icon, color: kAdminTextGray),
+                    selectedIcon:
+                        Icon(_allSections[i].icon, color: Colors.white),
+                    label: _mobileLabels[i]!,
+                  ),
+                const NavigationDestination(
+                  icon: Icon(Icons.more_horiz_rounded, color: kAdminTextGray),
+                  selectedIcon:
+                      Icon(Icons.more_horiz_rounded, color: Colors.white),
+                  label: 'More',
+                ),
+              ],
             ),
     );
   }

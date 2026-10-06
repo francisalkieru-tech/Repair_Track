@@ -53,9 +53,10 @@ class _TechnicianAccountSetupScreenState
     setState(() => _isSaving = false);
 
     if (result['success'] == true) {
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const TechnicianMainNav()),
+        (route) => false,
       );
     } else {
       setState(() => _errorMessage = result['error']?.toString() ??
@@ -84,9 +85,7 @@ class _TechnicianAccountSetupScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Enter the email your admin registered you with '
-                      'and the invite code they gave you, then choose '
-                      'your own password.',
+                      'Use your admin\'s invite code to set up your account.',
                       style: TextStyle(
                           fontSize: AppColors.fontLabel,
                           color: AppColors.textGray),

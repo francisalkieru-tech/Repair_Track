@@ -134,7 +134,10 @@ class _MonthGrid extends StatelessWidget {
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
 
-    return Padding(
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
@@ -179,6 +182,7 @@ class _MonthGrid extends StatelessWidget {
             gridDelegate:
                 const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
+              mainAxisExtent: 48, // fixed height so wide screens don't overflow
             ),
             itemBuilder: (context, index) {
               if (index < leadingBlanks) return const SizedBox.shrink();
@@ -240,6 +244,8 @@ class _MonthGrid extends StatelessWidget {
           ),
         ],
       ),
+    ),
+      ),
     );
   }
 }
@@ -255,7 +261,7 @@ class _ScheduledJobCard extends StatelessWidget {
     final appliance = data['applianceType'] as String? ?? 'Appliance';
     final trackingId = data['trackingId'] as String? ?? '';
     final status = data['status'] as String? ?? '';
-    final isHomeVisit = status == AppConstants.statusInHome;
+    final isHomeVisit = AppConstants.isTechVisit(status);
     final customerName = data['name'] as String? ?? '';
     final contactNumber = data['contactNumber'] as String? ?? '';
     final address = data['address'] as String? ?? '';
@@ -295,7 +301,7 @@ class _ScheduledJobCard extends StatelessWidget {
                         color: AppColors.inProcess.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text('Home visit',
+                      child: const Text('Tech Visit',
                           style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,

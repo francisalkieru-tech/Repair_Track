@@ -32,7 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF6F7F9),
       body: SafeArea(
         child: RefreshIndicator(
           color: AppColors.dark,
@@ -41,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -60,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Hi, "${user?.email ?? 'Customer'}"',
+                            'Hi, ${user?.email ?? 'Customer'}',
                             style: const TextStyle(
                               fontSize: AppColors.fontTitle,
                               fontWeight: FontWeight.bold,
@@ -70,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 4),
                           const Text(
-                            'Welcome to the RepairTrack',
+                            'Welcome to RepairTrack',
                             style: TextStyle(
                               fontSize: AppColors.fontLabel,
                               color: Colors.white70,
@@ -101,14 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 24),
 
-              const Text(
-                'Your Repair Summary:',
-                style: TextStyle(
-                  fontSize: AppColors.fontBody,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
-                ),
-              ),
+              const _SectionHeader('Your Repair Summary'),
               const SizedBox(height: 12),
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
@@ -193,26 +186,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 28),
 
-              const Text(
-                'What do you need?',
-                style: TextStyle(
-                  fontSize: AppColors.fontTitle,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 16),
+              const _SectionHeader('What do you need?'),
+              const SizedBox(height: 12),
 
               // Submit Repair Request
               _MenuCard(
-                backgroundColor: Colors.black,
+                isPrimary: true,
                 icon: Icons.build_circle_outlined,
-                iconColor: Colors.white,
                 title: 'Submit Your Repair Request',
                 subtitle:
-                    'Fill out a form and we\'ll guide you through basic troubleshooting before submitting repair request .',
-                titleColor: Colors.white,
-                subtitleColor: Colors.white70,
+                    'Fill out a short form and we\'ll guide you through basic troubleshooting first.',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -228,13 +211,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const _MenuCard(
-                      backgroundColor: Color(0xFF6B7280),
                       icon: Icons.access_time,
-                      iconColor: Colors.white,
                       title: 'Active Repair (...)',
                       subtitle: 'Loading your repair progress...',
-                      titleColor: Colors.white,
-                      subtitleColor: Colors.white70,
                       onTap: null,
                     );
                   }
@@ -247,13 +226,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   }).length;
 
                   return _MenuCard(
-                    backgroundColor: const Color(0xFF6B7280),
                     icon: Icons.access_time,
-                    iconColor: Colors.white,
                     title: 'Active Repair ($activeCount)',
                     subtitle: 'Click to view your repair progress',
-                    titleColor: Colors.white,
-                    subtitleColor: Colors.white70,
                     onTap: widget.onGoToRepairTab,
                   );
                 },
@@ -262,13 +237,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Repair History
               _MenuCard(
-                backgroundColor: const Color(0xFF9CA3AF),
                 icon: Icons.assignment_turned_in_outlined,
-                iconColor: Colors.white,
                 title: 'Repair History',
                 subtitle: 'View your completed repairs and service record.',
-                titleColor: Colors.white,
-                subtitleColor: Colors.white70,
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -425,15 +396,22 @@ class _SummaryStatCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF111827), width: 1.2),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x07000000),
+              blurRadius: 12,
+              offset: Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           children: [
             Text(
               '$value',
               style: const TextStyle(
-                fontSize: 28,
+                fontSize: 30,
                 fontWeight: FontWeight.bold,
                 color: AppColors.textDark,
               ),
@@ -465,7 +443,7 @@ class _SummaryStatCardLoading extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1.2),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: const SizedBox(
         height: 44,
@@ -481,68 +459,107 @@ class _SummaryStatCardLoading extends StatelessWidget {
   }
 }
 
+/// Section title used above each group on the Home screen.
+class _SectionHeader extends StatelessWidget {
+  final String text;
+  const _SectionHeader(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: AppColors.fontSubtitle + 3,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textDark,
+        ),
+      );
+}
+
+/// Home menu card. [isPrimary] = dark filled (main action),
+/// otherwise a white card with an icon box (secondary actions).
 class _MenuCard extends StatelessWidget {
-  final Color? backgroundColor;
+  final bool isPrimary;
   final IconData icon;
-  final Color iconColor;
   final String title;
   final String subtitle;
-  final Color titleColor;
-  final Color subtitleColor;
   final VoidCallback? onTap;
 
   const _MenuCard({
-    this.backgroundColor,
+    this.isPrimary = false,
     required this.icon,
-    required this.iconColor,
     required this.title,
     required this.subtitle,
-    required this.titleColor,
-    required this.subtitleColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: iconColor, size: 36),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: TextStyle(
-                          color: titleColor,
-                          fontSize: AppColors.fontBody,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: subtitleColor,
-                          fontSize: AppColors.fontCaption)),
-                ],
+    final titleColor = isPrimary ? Colors.white : AppColors.textDark;
+    final subtitleColor = isPrimary ? Colors.white70 : AppColors.textGray;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          width: double.infinity,
+          padding: EdgeInsets.all(isPrimary ? 20 : 16),
+          decoration: BoxDecoration(
+            gradient: isPrimary ? AppColors.darkGradient : null,
+            color: isPrimary ? null : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: isPrimary
+                ? null
+                : Border.all(color: const Color(0xFFE5E7EB)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isPrimary ? 0.12 : 0.04),
+                blurRadius: isPrimary ? 14 : 10,
+                offset: const Offset(0, 3),
               ),
-            ),
-            Icon(Icons.chevron_right, color: titleColor),
-          ],
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: isPrimary ? 52 : 44,
+                height: isPrimary ? 52 : 44,
+                decoration: BoxDecoration(
+                  color: isPrimary
+                      ? Colors.white.withOpacity(0.12)
+                      : const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: isPrimary ? Colors.white : const Color(0xFF374151),
+                  size: isPrimary ? 28 : 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            color: titleColor,
+                            fontSize: AppColors.fontBody,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(subtitle,
+                        style: TextStyle(
+                            color: subtitleColor,
+                            fontSize: AppColors.fontCaption + 0.5,
+                            height: 1.35)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  color: isPrimary ? Colors.white70 : const Color(0xFF9CA3AF)),
+            ],
+          ),
         ),
       ),
     );

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/colors.dart';
-import '../../utils/constants.dart';
+import '../../utils/ui_widgets.dart';
+import '../../widget/tech_job_ui.dart';
 import 'technicians_job_details.dart';
 
 class TechnicianCurrentTab extends StatelessWidget {
@@ -22,7 +23,7 @@ class TechnicianCurrentTab extends StatelessWidget {
       stream: FirestoreService().streamMyJobs(technicianDocId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const AppLoadingIndicator(message: 'Loading your jobs...');
         }
 
         final jobs = (snapshot.data?.docs ?? [])
@@ -35,22 +36,15 @@ class TechnicianCurrentTab extends StatelessWidget {
           });
 
         if (jobs.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'Nothing in progress right now — start a job from '
-                'Pending to see it here.',
-                style: TextStyle(
-                    fontSize: AppColors.fontBody, color: AppColors.textGray),
-                textAlign: TextAlign.center,
-              ),
-            ),
+          return const AppEmptyState(
+            icon: Icons.handyman_outlined,
+            title: 'Nothing in progress',
+            subtitle: 'Start a job from Pending to see it here.',
           );
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
           itemCount: jobs.length,
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
@@ -73,29 +67,19 @@ class TechnicianCurrentTab extends StatelessWidget {
   }
 }
 
+/// Current-tab card: shared job card + a status hint at the bottom.
 class _CurrentJobCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
 
   const _CurrentJobCard({required this.data, required this.onTap});
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'Waiting for Parts':
-        return AppColors.waitingParts;
-      case 'Pending Review':
-        return AppColors.completed;
-      default:
-        return AppColors.inProcess;
-    }
-  }
-
   String _actionHint(String status) {
     switch (status) {
       case 'Waiting for Parts':
-        return 'Waiting on the part — tap to check the latest.';
+        return 'Waiting on the part. Tap to check the latest.';
       case 'Pending Review':
-        return 'Marked done — waiting on Admin to confirm.';
+        return 'Marked done. Waiting on Admin to confirm.';
       default:
         return 'Tap to update this repair.';
     }
@@ -104,81 +88,26 @@ class _CurrentJobCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = data['status'] as String? ?? 'In Process';
-    final appliance = data['applianceType'] as String? ?? 'Appliance';
-    final trackingId = data['trackingId'] as String? ?? '';
-    final problem = data['problemDescription'] as String? ?? '';
-    final color = _statusColor(status);
+    final color = techStatusTextColor(status);
 
-    return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color, width: 1.4),
+    return TechJobCard(
+      data: data,
+      onTap: onTap,
+      footer: Row(
+        children: [
+          Icon(Icons.touch_app_outlined, size: 16, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              _actionHint(status),
+              style: TextStyle(
+                  fontSize: AppColors.fontCaption,
+                  fontWeight: FontWeight.w600,
+                  color: color),
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(appliance,
-                      style: const TextStyle(
-                          fontSize: AppColors.fontBody,
-                          fontWeight: FontWeight.bold)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      AppConstants.displayLabel(status),
-                      style: TextStyle(
-                        fontSize: AppColors.fontCaption,
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text('Tracking ID: $trackingId',
-                  style: const TextStyle(
-                      fontSize: AppColors.fontCaption,
-                      color: AppColors.textGray)),
-              if (problem.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  problem,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: AppColors.fontLabel),
-                ),
-              ],
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(Icons.touch_app_outlined, size: 15, color: color),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      _actionHint(status),
-                      style: TextStyle(fontSize: 12, color: color),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+          Icon(Icons.chevron_right, size: 20, color: color),
+        ],
       ),
     );
   }

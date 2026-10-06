@@ -6,9 +6,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../utils/qr_downloader.dart';
+import '../../utils/qr_printer.dart';
+import '../../utils/qr_sticker.dart';
 import '../../services/firestore_service.dart';
 import '../../services/sms_service.dart';
 import '../../services/storage_service.dart';
@@ -19,7 +20,10 @@ import '../../utils/constants.dart';
 
 /// Requests page.
 class RequestsScreen extends StatefulWidget {
-  const RequestsScreen({super.key});
+  /// Tab to open first: 0 = New Request, 1 = Accepted, 2 = In Process.
+  final int initialTab;
+
+  const RequestsScreen({super.key, this.initialTab = 0});
 
   @override
   State<RequestsScreen> createState() => _RequestsScreenState();
@@ -34,7 +38,11 @@ class _RequestsScreenState extends State<RequestsScreen>
   void initState() {
     super.initState();
 
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 2),
+    );
 
     _firestoreService.applyExpiredPartsDecisionDefaults();
   }
@@ -53,7 +61,7 @@ class _RequestsScreenState extends State<RequestsScreen>
         children: [
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: TabBar(
               controller: _tabController,
               labelColor: kAdminTextDark,
@@ -150,10 +158,112 @@ class _RequestsScreenState extends State<RequestsScreen>
   }
 }
 
+// "Technician reassigned from X to Y — Oct 5, 2:30 PM" lines, oldest first,
+// built from the status-history entries that carry `reassignedFrom`.
+List<String> _reassignmentLog(Map<String, dynamic> data) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  final history = data['statusHistory'];
+  if (history is! List) return const [];
+
+  final lines = <String>[];
+  for (final h in history) {
+    if (h is! Map) continue;
+    final declinedBy = h['declinedBy'];
+    if (h['reassignedFrom'] == null && declinedBy == null) continue;
+    final to = h['technician'] ?? '';
+    var stamp = '';
+    if (h['timestamp'] is Timestamp) {
+      final t = (h['timestamp'] as Timestamp).toDate();
+      final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
+      final minute = t.minute.toString().padLeft(2, '0');
+      stamp =
+          ' — ${months[t.month - 1]} ${t.day}, $hour:$minute ${t.hour >= 12 ? 'PM' : 'AM'}';
+    }
+    // Why the technician declined (shown to Admin only)
+    final why = (h['declineReason'] ?? '').toString();
+    final extra = (h['declineNote'] ?? '').toString();
+    final reason = why.isEmpty
+        ? ''
+        : ' (reason: $why${extra.isEmpty ? '' : ' - $extra'})';
+
+    if (h['reassignedFrom'] == null) {
+      // Declined and nobody was free: waiting for Admin
+      lines.add('$declinedBy declined this job$reason$stamp. '
+          'Needs reassignment.');
+      continue;
+    }
+    lines.add('Technician reassigned from ${h['reassignedFrom']} to $to$stamp'
+        '${declinedBy != null ? ' - declined$reason' : ''}'
+        '${h['assignedManually'] == true ? ' (chosen by admin)' : ''}');
+  }
+  return lines;
+}
+
+// TECHNICIAN QUEUE
+// Called after a job is assigned. Admin still picks the technician manually;
+// this only keeps the queue order fair:
+//  - technicians AHEAD of the assigned one who could not take the job
+//    (off duty, on a tech call/visit, or full) go to the back of the queue,
+//  - the previous technician (when Admin reassigns) goes to the back,
+//  - the technician who just got the job goes to the back.
+// Best-effort: a failure here never blocks the assignment itself.
+Future<void> _advanceTechnicianQueue({
+  required String assignedName,
+  String? previousName,
+}) async {
+  try {
+    final fs = FirestoreService();
+    final techSnap = await fs.streamTechnicians().first;
+    final reqSnap = await fs.streamRepairRequests().first;
+    final requests = reqSnap.docs
+        .map((d) => d.data() as Map<String, dynamic>)
+        .toList();
+    final techs = techSnap.docs.map((d) {
+      final m = Map<String, dynamic>.from(d.data() as Map);
+      m['id'] = d.id;
+      return m;
+    }).toList();
+
+    final ordered = orderTechnicianQueue(techs);
+    final assignedIndex = ordered.indexWhere((t) => t['name'] == assignedName);
+    if (assignedIndex < 0) return;
+
+    // Technicians ahead in the queue who are clocked in but could not take
+    // the job (busy / full) go to the back. Technicians who are not clocked
+    // in are simply skipped and keep their place.
+    final moveToEnd = <String>[];
+    for (var i = 0; i < assignedIndex; i++) {
+      final t = ordered[i];
+      if (isTechnicianClockedIn(t) && !isTechnicianAssignable(requests, t)) {
+        moveToEnd.add(t['id'] as String);
+      }
+    }
+    // Reassigned away from someone (declined / unavailable): back of the queue
+    if (previousName != null) {
+      final prev = ordered.indexWhere((t) => t['name'] == previousName);
+      if (prev >= 0) moveToEnd.add(ordered[prev]['id'] as String);
+    }
+    // The technician who just got the job goes to the back too
+    moveToEnd.add(ordered[assignedIndex]['id'] as String);
+
+    await fs.moveTechniciansToQueueEnd(
+      currentOrderIds: ordered.map((t) => t['id'] as String).toList(),
+      moveToEnd: moveToEnd,
+    );
+  } catch (_) {
+    // Non-fatal.
+  }
+}
+
 // QR is available only for eligible statuses.
 const _kQrEligibleStatuses = {
-  'In Home',
-  'In Shop',
+  AppConstants.statusTechVisit,
+  AppConstants.statusOnSite,
+  AppConstants.legacyInHome, // un-migrated data
+  AppConstants.legacyInShop, // un-migrated data
   'In Process',
   'Waiting for Parts',
   'Completed',
@@ -194,7 +304,12 @@ Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic>
                         color: Color(0xFF555555),
                       ),
                     ),
-                    Row(
+                    // Wrap so the status badge drops to the next line on
+                    // narrow phone screens instead of overflowing.
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 14,
+                      runSpacing: 4,
                       children: [
                         Text(
                           trackingId,
@@ -205,16 +320,20 @@ Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic>
                             color: Colors.black,
                           ),
                         ),
-                        const SizedBox(width: 16),
-                        const Text(
-                          'Status : ',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Status : ',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
+                            ),
+                            _buildStatusBadge(status),
+                          ],
                         ),
-                        _buildStatusBadge(status),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -247,11 +366,35 @@ Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic>
                           const Icon(Icons.engineering_outlined,
                               size: 13, color: Color(0xFF666666)),
                           const SizedBox(width: 4),
-                          Text(
-                            assignedTechnician,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF666666),
+                          Flexible(
+                            child: Text(
+                              assignedTechnician,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF666666),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    // Reassignment log (from the ticket's status history)
+                    for (final line in _reassignmentLog(data)) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.swap_horiz_rounded,
+                              size: 13, color: Color(0xFF666666)),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              line,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: Color(0xFF666666),
+                              ),
                             ),
                           ),
                         ],
@@ -311,10 +454,12 @@ Widget buildRequestCard(BuildContext context, String docId, Map<String, dynamic>
                 child: InkWell(
                   borderRadius: BorderRadius.circular(20),
                   onTap: () => _handleCardTap(context, docId, data),
-                  child: const Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    child: Row(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal:
+                            MediaQuery.of(context).size.width < 600 ? 12 : 18,
+                        vertical: 10),
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
@@ -455,12 +600,30 @@ String? _latestPartsNote(Map<String, dynamic> data) {
   return null;
 }
 
+// TECHNICIAN ASSIGNMENT — fair queue by default, Admin can still override.
+// The system suggests the next technician in the queue who is clocked in
+// today and available (fair rotation). Admin can accept that, or choose a
+// different available technician when the job needs another skill (the
+// override is flagged in the ticket history). For an already-assigned ticket
+// Admin can "Reassign to next in queue" or choose someone else.
 class _TechnicianPickerField extends StatefulWidget {
+  /// Technician already on the ticket (null when accepting a new request).
   final String? initialTechnician;
-  final void Function(String? name, String? id) onChanged;
+
+  /// Allows "Reassign to next in queue" for a ticket that already has a
+  /// technician.
+  final bool allowReassign;
+
+  /// Appliance of the ticket — used to prefer a specialist technician.
+  final String? applianceType;
+
+  /// [manual] is true when Admin overrode the queue's suggestion.
+  final void Function(String? name, String? id, bool manual) onChanged;
 
   const _TechnicianPickerField({
     this.initialTechnician,
+    this.allowReassign = false,
+    this.applianceType,
     required this.onChanged,
   });
 
@@ -471,13 +634,17 @@ class _TechnicianPickerField extends StatefulWidget {
 
 class _TechnicianPickerFieldState extends State<_TechnicianPickerField> {
   final FirestoreService _firestoreService = FirestoreService();
-  String? _selectedTechnician;
-  String? _selectedTechnicianId;
+  bool _reassigning = false;
+  String? _manualName; // technician Admin chose instead of the queue pick
+  String? _reportedKey; // last "name|manual" sent through onChanged
 
-  @override
-  void initState() {
-    super.initState();
-    _selectedTechnician = widget.initialTechnician;
+  void _report(String? name, String? id, bool manual) {
+    final key = '$name|$manual';
+    if (_reportedKey == key) return;
+    _reportedKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onChanged(name, id, manual);
+    });
   }
 
   @override
@@ -492,74 +659,213 @@ class _TechnicianPickerFieldState extends State<_TechnicianPickerField> {
         return StreamBuilder<QuerySnapshot>(
           stream: _firestoreService.streamTechnicians(),
           builder: (context, snapshot) {
-            final docs = snapshot.data?.docs ?? [];
-            final nameToId = <String, String>{
-              for (final doc in docs)
-                (doc.data() as Map<String, dynamic>)['name'] as String: doc.id,
-            };
-            final technicians = nameToId.keys.toList();
+            final techs = (snapshot.data?.docs ?? []).map((d) {
+              final m = Map<String, dynamic>.from(d.data() as Map);
+              m['id'] = d.id;
+              return m;
+            }).toList();
+            final queue = orderTechnicianQueue(techs);
 
-            if (_selectedTechnician != null &&
-                !technicians.contains(_selectedTechnician)) {
-              technicians.add(_selectedTechnician!);
+            final current = widget.initialTechnician;
+            final hasCurrent = current != null && current.isNotEmpty;
+
+            // Technicians Admin may choose from (clocked in and free)
+            final choices = queue
+                .where((t) =>
+                    isTechnicianAssignable(allData, t) &&
+                    (!hasCurrent || t['name'] != current))
+                .toList();
+            final manualTech = _manualName == null
+                ? null
+                : choices
+                    .where((t) => t['name'] == _manualName)
+                    .cast<Map<String, dynamic>?>()
+                    .firstOrNull;
+            final isManual = manualTech != null;
+            final reassigning = _reassigning || isManual;
+
+            // Who is (or will be) on the ticket
+            Map<String, dynamic>? chosen;
+            if (isManual) {
+              chosen = manualTech;
+            } else if (hasCurrent && !reassigning) {
+              for (final t in techs) {
+                if (t['name'] == current) chosen = t;
+              }
+            } else {
+              chosen = nextTechnicianInQueue(
+                allData,
+                techs,
+                excludeName: hasCurrent ? current : null,
+                applianceType: widget.applianceType,
+              );
+            }
+            _report(
+              chosen?['name'] as String? ??
+                  (hasCurrent && !reassigning ? current : null),
+              chosen?['id'] as String?,
+              isManual,
+            );
+
+            String tag(Map<String, dynamic> t) {
+              if (!isTechnicianClockedIn(t)) return 'Off duty';
+              if (isTechnicianAssignable(allData, t)) return 'Available';
+              return 'Busy';
             }
 
-            final resolvedId =
-                _selectedTechnician == null ? null : nameToId[_selectedTechnician];
-            if (resolvedId != _selectedTechnicianId) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  setState(() => _selectedTechnicianId = resolvedId);
-                  widget.onChanged(_selectedTechnician, resolvedId);
-                }
-              });
-            }
+            final noOne = chosen == null && !(hasCurrent && !reassigning);
+            final specialistMatch = chosen != null &&
+                technicianCoversAppliance(chosen, widget.applianceType);
+            final anySpecialist = techs
+                .any((t) => technicianCoversAppliance(t, widget.applianceType));
 
-            return DropdownButtonFormField<String>(
-              initialValue: _selectedTechnician,
-              hint: const Text('Select a technician'),
-              items: [
-                ...technicians.map((name) {
-                  final activeJobs = activeJobsForTechnician(allData, name);
-                  final activeCount = activeJobs.length;
-                  final isSelf = name == _selectedTechnician;
-                  final onHomeVisit = activeJobs
-                      .any((r) => r['status'] == AppConstants.statusInHome);
-                  final isFull = !isSelf &&
-                      !isTechnicianAvailable(allData, name);
-                  final label = !isFull
-                      ? '$name ($activeCount/$kMaxActiveJobsPerTechnician)'
-                      : onHomeVisit
-                          ? '$name — On a home visit'
-                          : '$name — Full ($activeCount/$kMaxActiveJobsPerTechnician)';
-                  return DropdownMenuItem(
-                    value: name,
-                    enabled: !isFull,
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        color: isFull ? const Color(0xFF9CA3AF) : null,
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.engineering_outlined,
+                          size: 18, color: Color(0xFF374151)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          noOne
+                              ? 'No technician available'
+                              : (chosen?['name'] ?? current ?? '') as String,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: noOne
+                                ? const Color(0xFF991B1B)
+                                : const Color(0xFF111827),
+                          ),
+                        ),
+                      ),
+                      if (!noOne)
+                        Text(
+                          isManual
+                              ? 'Chosen by admin'
+                              : reassigning
+                                  ? 'Next in queue'
+                                  : hasCurrent
+                                      ? 'Assigned'
+                                      : 'Next in queue',
+                          style: const TextStyle(
+                              fontSize: 11.5, color: Color(0xFF6B7280)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    noOne
+                        ? 'No technician is clocked in and free right now. '
+                            'Technicians must Clock In on their app first.'
+                        : specialistMatch
+                            ? 'Matched to a technician who specializes in '
+                                '${widget.applianceType}. Jobs are still shared '
+                                'fairly within the specialists.'
+                            : anySpecialist
+                                ? 'No ${widget.applianceType} specialist is free '
+                                    'right now, so the next available technician '
+                                    'was picked. You can choose another one below.'
+                                : 'Default is the next technician in the queue, so '
+                                    'jobs are shared fairly. You can choose another '
+                                    'technician if this job needs a different skill.',
+                    style: const TextStyle(
+                        fontSize: 11.5, color: Color(0xFF6B7280)),
+                  ),
+                  if (hasCurrent && widget.allowReassign) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _reassigning = !reassigning;
+                            _manualName = null;
+                            _reportedKey = null;
+                          });
+                        },
+                        icon: Icon(
+                            reassigning ? Icons.undo : Icons.swap_horiz,
+                            size: 16),
+                        label: Text(reassigning
+                            ? 'Keep $current'
+                            : 'Reassign to next in queue'),
                       ),
                     ),
-                  );
-                }),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedTechnician = value;
-                  _selectedTechnicianId = value == null ? null : nameToId[value];
-                });
-                widget.onChanged(value, value == null ? null : nameToId[value]);
-              },
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: const Color(0xFFF9FAFB),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                ),
+                  ],
+                  // Override: choose a different available technician
+                  if (choices.isNotEmpty &&
+                      (!hasCurrent || widget.allowReassign)) ...[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: isManual ? _manualName : null,
+                      isExpanded: true,
+                      hint: const Text('Choose a different technician'),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                      items: [
+                        for (final t in choices)
+                          DropdownMenuItem(
+                            value: t['name'] as String,
+                            child: Text(
+                              '${t['name']}'
+                              '${technicianSpecializations(t).isEmpty ? '' : ' — ${technicianSpecializations(t).join(', ')}'}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) => setState(() {
+                        _manualName = value;
+                        _reportedKey = null;
+                      }),
+                    ),
+                    if (isManual)
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _manualName = null;
+                          _reportedKey = null;
+                        }),
+                        child: const Text('Back to the queue pick'),
+                      ),
+                  ],
+                  if (queue.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text('Queue',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF374151))),
+                    const SizedBox(height: 2),
+                    for (int i = 0; i < queue.length; i++)
+                      Text(
+                        '${i + 1}. ${queue[i]['name']} — ${tag(queue[i])}'
+                        '${technicianCoversAppliance(queue[i], widget.applianceType) ? ' • Specialist' : ''}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: queue[i]['name'] == chosen?['name']
+                              ? Colors.black
+                              : const Color(0xFF6B7280),
+                          fontWeight: queue[i]['name'] == chosen?['name']
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                        ),
+                      ),
+                  ],
+                ],
               ),
             );
           },
@@ -641,6 +947,42 @@ class _PartsDecisionPanelState extends State<_PartsDecisionPanel> {
         docId: widget.docId,
         partDetails: _detailsController.text,
       );
+
+      // Best-effort bell notification to the customer so they know
+      // they have a 24-hour decision to make.
+      try {
+        final reqDoc = await FirebaseFirestore.instance
+            .collection('repairRequests')
+            .doc(widget.docId)
+            .get();
+        final reqData = reqDoc.data();
+        final shopDoc = await FirebaseFirestore.instance
+            .collection('shopSettings')
+            .doc('config')
+            .get();
+        await SmsService().sendPartsDecisionRequestSms(
+          shopName: shopDoc.data()?['shopName'] as String? ?? 'RepairTrack',
+          contactNumber: reqData?['contactNumber'] as String? ?? '',
+          trackingId: reqData?['trackingId'] as String? ?? '',
+          applianceType: reqData?['applianceType'] as String? ?? 'appliance',
+          partDetails: _detailsController.text,
+        );
+        final customerId = reqData?['customerId'] as String?;
+        if (customerId != null && customerId.isNotEmpty) {
+          await FirestoreService().createNotification(
+            recipientType: 'customer',
+            recipientId: customerId,
+            title: 'Action needed: choose who supplies the part',
+            body: 'Your ${reqData?['applianceType'] ?? 'appliance'} '
+                '(ID: ${reqData?['trackingId'] ?? ''}) needs a part. '
+                'Please choose within 24 hours.',
+            trackingId: reqData?['trackingId'] as String?,
+          );
+        }
+      } catch (_) {
+        // Non-fatal — the decision window already opened.
+      }
+
       if (mounted) {
         setState(() => _locallyMarkedAwaiting = true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -792,6 +1134,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   String? _partsSource;
   String? _selectedTechnician;
   String? _selectedTechnicianId;
+  bool _assignedManually = false; // Admin overrode the queue pick
   DateTime? _scheduledDateTime;
   Uint8List? _selectedImage;
   bool _isSubmitting = false;
@@ -804,17 +1147,20 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
   );
 
   static const Map<String, List<String>> _nextStatusOptions = {
-    'Accepted': ['In Shop', 'In Home'],
-    'In Shop': ['In Process', 'Waiting for Parts'],
-    'In Home': ['In Process', 'Waiting for Parts', 'Completed'],
+    'Accepted': ['On-Site', 'Tech Visit'],
+    'On-Site': ['In Process', 'Waiting for Parts'],
+    'Tech Visit': ['In Process', 'Waiting for Parts', 'Completed'],
     'Queued': ['In Process'],
     'Waiting for Parts': ['In Process'],
     'In Process': ['Waiting for Parts', 'Pending Review', 'Completed'],
     'Pending Review': ['Completed', 'In Process'],
   };
 
+  // normalizeStatus: a ticket still holding an old 'In Home' / 'In Shop'
+  // value (before the migration) gets the same next-step options.
   List<String> get _availableStatuses =>
-      _nextStatusOptions[widget.currentStatus] ?? [widget.currentStatus];
+      _nextStatusOptions[AppConstants.normalizeStatus(widget.currentStatus)] ??
+      [widget.currentStatus];
 
   static const _statusesNeedingPartsSource = {
     'In Process',
@@ -825,7 +1171,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
       _selectedStatus == 'Completed' || _selectedStatus == 'Waiting for Parts';
   bool get _partsSourceRelevant =>
       _statusesNeedingPartsSource.contains(_selectedStatus);
-  bool get _scheduleRequired => _selectedStatus == 'In Home';
+  bool get _scheduleRequired => AppConstants.isTechVisit(_selectedStatus);
   bool get _warrantyRelevant => _selectedStatus == 'Completed';
 
   @override
@@ -981,11 +1327,24 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
         }
       }
 
+      // Transparency: if Admin changed the technician on a ticket that
+      // already had one, say so in the ticket history.
+      final previousTech = widget.currentTechnician;
+      final wasReassigned = previousTech != null &&
+          _selectedTechnician != null &&
+          previousTech != _selectedTechnician;
+      final historyNote = wasReassigned
+          ? 'Technician reassigned from $previousTech to $_selectedTechnician.'
+              '${_noteController.text.trim().isEmpty ? '' : ' ${_noteController.text.trim()}'}'
+          : _noteController.text;
+
       await _firestoreService.updateRepairStatus(
         docId: widget.docId,
         trackingId: widget.trackingId,
         newStatus: finalStatus,
-        note: _noteController.text,
+        note: historyNote,
+        reassignedFrom: wasReassigned ? previousTech : null,
+        assignedManually: _assignedManually && wasReassigned,
         partsSource: _partsSourceRelevant ? _partsSource : null,
         assignedTechnician: _selectedTechnician,
         assignedTechnicianUid: _selectedTechnicianId,
@@ -997,7 +1356,17 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
             : null,
       );
 
-      if (_selectedStatus == 'In Home') {
+      // Move technicians in the assignment queue (new / changed technician)
+      if (_selectedTechnician != null &&
+          _selectedTechnician != previousTech) {
+        await _advanceTechnicianQueue(
+          assignedName: _selectedTechnician!,
+          previousName: previousTech,
+        );
+      }
+
+      // QR flag is set when a ticket goes to Tech Visit (was 'In Home').
+      if (AppConstants.isTechVisit(_selectedStatus)) {
         await FirebaseFirestore.instance
             .collection('repairRequests')
             .doc(widget.docId)
@@ -1182,8 +1551,10 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
 
                   final techOwnsThisStage = widget.currentTechnician != null &&
                       const {
-                        'In Shop',
-                        'In Home',
+                        'On-Site',
+                        'Tech Visit',
+                        'In Shop', // old value, until migrated
+                        'In Home', // old value, until migrated
                         'Queued',
                         'In Process',
                         'Waiting for Parts',
@@ -1231,7 +1602,9 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                       initialValue: _selectedStatus,
                       items: _availableStatuses
                           .map((s) =>
-                              DropdownMenuItem(value: s, child: Text(s)))
+                              DropdownMenuItem(
+                              value: s,
+                              child: Text(AppConstants.displayLabel(s))))
                           .toList(),
                       onChanged: (value) {
                         if (value != null) {
@@ -1413,10 +1786,13 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
                             color: Color(0xFF374151))),
                     const SizedBox(height: 6),
                     _TechnicianPickerField(
-                      initialTechnician: _selectedTechnician,
-                      onChanged: (name, id) {
+                      initialTechnician: widget.currentTechnician,
+                      allowReassign: true,
+                      applianceType: widget.applianceType,
+                      onChanged: (name, id, manual) {
                         _selectedTechnician = name;
                         _selectedTechnicianId = id;
+                        _assignedManually = manual;
                       },
                     ),
                     const SizedBox(height: 12),
@@ -1632,6 +2008,9 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
   bool _isSubmitting = false;
   String? _selectedTechnician;
   String? _selectedTechnicianId;
+  bool _assignedManually = false; // Admin overrode the queue pick
+  // 'shop' = customer brings the appliance in, 'home' = technician visits
+  String _serviceMode = 'shop';
 
   @override
   void dispose() {
@@ -1656,7 +2035,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
     if (newStatus == 'Accepted' && _selectedTechnician == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select a technician to assign this job to.'),
+          content: Text('No technician is clocked in and available. Technicians must Clock In first.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1675,7 +2054,13 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
             newStatus == 'Accepted' ? _selectedTechnician : null,
         assignedTechnicianUid:
             newStatus == 'Accepted' ? _selectedTechnicianId : null,
+        serviceMode: newStatus == 'Accepted' ? _serviceMode : null,
+        assignedManually: newStatus == 'Accepted' && _assignedManually,
       );
+
+      if (newStatus == 'Accepted' && _selectedTechnician != null) {
+        await _advanceTechnicianQueue(assignedName: _selectedTechnician!);
+      }
 
       final shopInfoDoc = await FirebaseFirestore.instance
           .collection('shopSettings')
@@ -1691,7 +2076,31 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
         newStatus: newStatus,
         note: _noteController.text,
         technician: newStatus == 'Accepted' ? _selectedTechnician : null,
+        serviceMode: newStatus == 'Accepted' ? _serviceMode : null,
       );
+
+      if (newStatus == 'Accepted') {
+        try {
+          final reqDoc = await FirebaseFirestore.instance
+              .collection('repairRequests')
+              .doc(widget.docId)
+              .get();
+          final customerId = reqDoc.data()?['customerId'] as String?;
+          if (customerId != null && customerId.isNotEmpty) {
+            await _firestoreService.createNotification(
+              recipientType: 'customer',
+              recipientId: customerId,
+              title: 'Repair request accepted',
+              body: 'Your ${widget.applianceType} '
+                  '(ID: ${widget.trackingId}) was accepted'
+                  '${_selectedTechnician != null ? ' and assigned to $_selectedTechnician' : ''}.',
+              trackingId: widget.trackingId,
+            );
+          }
+        } catch (_) {
+          // Non-fatal.
+        }
+      }
 
       // Best-effort alert to the assigned technician — phoneNumber is
       // an optional field on their technicians/ doc, so this is
@@ -1919,23 +2328,60 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
               ),
 
               const SizedBox(height: 16),
-              const Text('Assign Technician',
+              const Text('Service Type',
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF374151))),
               const SizedBox(height: 4),
               const Text(
-                'Required to accept — the job goes straight into their '
-                'queue.',
+                'On-Site = customer brings the appliance to the shop. '
+                'Tech Visit = technician goes to the customer\'s address.',
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: 'shop',
+                      icon: Icon(Icons.store_outlined, size: 18),
+                      label: Text('On-Site'),
+                    ),
+                    ButtonSegment(
+                      value: 'home',
+                      icon: Icon(Icons.home_outlined, size: 18),
+                      label: Text('Tech Visit'),
+                    ),
+                  ],
+                  selected: {_serviceMode},
+                  onSelectionChanged: (v) =>
+                      setState(() => _serviceMode = v.first),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              const Text('Technician (assigned by queue)',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF374151))),
+              const SizedBox(height: 4),
+              const Text(
+                'The next available technician in the queue gets the job '
+                'automatically.',
                 style: TextStyle(fontSize: 11.5, color: Color(0xFF6B7280)),
               ),
               const SizedBox(height: 6),
               _TechnicianPickerField(
                 initialTechnician: _selectedTechnician,
-                onChanged: (name, id) {
+                applianceType: widget.applianceType,
+                onChanged: (name, id, manual) {
                   _selectedTechnician = name;
                   _selectedTechnicianId = id;
+                  _assignedManually = manual;
                 },
               ),
 
@@ -2030,59 +2476,82 @@ class _QrCodeDialog extends StatefulWidget {
 }
 
 class _QrCodeDialogState extends State<_QrCodeDialog> {
-  final GlobalKey _qrBoundaryKey = GlobalKey();
-  bool _isSaving = false;
+  bool _busy = false;
+  double _sizeMm = 50; // sticker width
+  late Future<QrSticker> _stickerFuture;
 
   String get _qrData => 'repairtrack://track/${widget.trackingId}';
 
-  Future<void> _downloadQr() async {
-    setState(() => _isSaving = true);
-    try {
-      final boundary = _qrBoundaryKey.currentContext!.findRenderObject()
-          as RenderRepaintBoundary;
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) {
-        throw Exception('Unable to convert the QR image to PNG.');
-      }
-      final bytes = byteData.buffer.asUint8List();
-      final fileName = 'QR_${widget.trackingId}.png';
+  String get _fileName =>
+      'QR_Sticker_${widget.trackingId}_${_sizeMm.round()}mm.png';
 
-      if (kIsWeb) {
-        downloadBytesAsFile(bytes, fileName);
-      } else {
-        await Share.shareXFiles(
-          [XFile.fromData(bytes, name: fileName, mimeType: 'image/png')],
-          text: 'RepairTrack QR Code — ${widget.trackingId}',
-        );
-      }
+  @override
+  void initState() {
+    super.initState();
+    _stickerFuture = _renderSticker();
+  }
+
+  // Print-ready sticker at an exact size (mm) and 600 DPI
+  Future<QrSticker> _renderSticker() => renderQrSticker(
+        data: _qrData,
+        trackingId: widget.trackingId,
+        widthMm: _sizeMm,
+      );
+
+  Future<void> _run(Future<void> Function(QrSticker sticker) action) async {
+    setState(() => _busy = true);
+    try {
+      final sticker = await _stickerFuture;
+      await action(sticker);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to download QR: $e'),
+            content: Text('Failed to prepare the sticker: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
+
+  Future<void> _shareFile(QrSticker sticker) {
+    return Share.shareXFiles(
+      [XFile.fromData(sticker.png, name: _fileName, mimeType: 'image/png')],
+      text: 'RepairTrack QR sticker — ${widget.trackingId}',
+    );
+  }
+
+  // Save the sticker PNG (web: download; phone: share sheet)
+  Future<void> _download() => _run((sticker) async {
+        if (kIsWeb) {
+          downloadBytesAsFile(sticker.png, _fileName);
+        } else {
+          await _shareFile(sticker);
+        }
+      });
+
+  // Print the sticker (web: print dialog at the exact sticker size;
+  // phone: share to a printer app / print service)
+  Future<void> _print() => _run((sticker) async {
+        if (kIsWeb) {
+          printStickerPng(sticker.png, sticker.widthMm, sticker.heightMm);
+        } else {
+          await _shareFile(sticker);
+        }
+      });
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle,
-                color: Color(0xFF166534), size: 32),
-            const SizedBox(height: 8),
             Text(
               widget.customerName,
               style: const TextStyle(
@@ -2100,32 +2569,88 @@ class _QrCodeDialogState extends State<_QrCodeDialog> {
                 color: Color(0xFF6B7280),
               ),
             ),
-            const SizedBox(height: 16),
-            RepaintBoundary(
-              key: _qrBoundaryKey,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                color: Colors.white,
-                child: QrImageView(
-                  data: _qrData,
-                  version: QrVersions.auto,
-                  size: 200,
-                  backgroundColor: Colors.white,
-                ),
-              ),
+            const SizedBox(height: 14),
+
+            // Sticker size
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final size in kQrStickerSizes)
+                  ChoiceChip(
+                    label: Text('${size.$1} • ${size.$2.round()} mm'),
+                    selected: _sizeMm == size.$2,
+                    selectedColor: Colors.black,
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _sizeMm == size.$2 ? Colors.white : Colors.black,
+                    ),
+                    onSelected: _busy
+                        ? null
+                        : (_) => setState(() {
+                              _sizeMm = size.$2;
+                              _stickerFuture = _renderSticker();
+                            }),
+                  ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Scan to view the full service record',
-              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-              textAlign: TextAlign.center,
+            const SizedBox(height: 14),
+
+            // Live preview of the sticker that will be printed
+            FutureBuilder<QrSticker>(
+              future: _stickerFuture,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Text('Could not draw the sticker.'),
+                  );
+                }
+                final sticker = snapshot.data;
+                if (sticker == null) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  );
+                }
+                return Column(
+                  children: [
+                    Container(
+                      decoration: const BoxDecoration(
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x33000000),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Image.memory(
+                        sticker.png,
+                        width: 190,
+                        filterQuality: FilterQuality.high,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${sticker.widthMm.round()} × '
+                      '${sticker.heightMm.round()} mm • 600 DPI',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _isSaving ? null : _downloadQr,
-                icon: _isSaving
+                onPressed: _busy ? null : _print,
+                icon: _busy
                     ? const SizedBox(
                         height: 16,
                         width: 16,
@@ -2134,10 +2659,10 @@ class _QrCodeDialogState extends State<_QrCodeDialog> {
                           strokeWidth: 2,
                         ),
                       )
-                    : const Icon(Icons.download, size: 18),
-                label: const Text('Download'),
+                    : Icon(kIsWeb ? Icons.print : Icons.ios_share, size: 18),
+                label: Text(kIsWeb ? 'Print Sticker' : 'Print / Share Sticker'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(
@@ -2146,21 +2671,35 @@ class _QrCodeDialogState extends State<_QrCodeDialog> {
                 ),
               ),
             ),
+            if (kIsWeb) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'In the print window set Margins: None and Scale: 100%.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _download,
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Download PNG'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF374151),
+                  foregroundColor: const Color(0xFF111827),
                   side: const BorderSide(color: Color(0xFFD1D5DB)),
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text('Cancel'),
               ),
+            ),
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
             ),
           ],
         ),

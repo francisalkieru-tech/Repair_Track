@@ -5,6 +5,8 @@ import '../../services/auth_service.dart';
 import '../auth/Welcome_screen.dart';
 import '../../utils/colors.dart';
 import '../../utils/ui_widgets.dart';
+import '../../widget/tech_reports_card.dart';
+import 'technician_credentials_screen.dart';
 
 class TechnicianSettingsScreen extends StatefulWidget {
   final String technicianDocId;
@@ -91,7 +93,8 @@ class _TechnicianSettingsScreenState extends State<TechnicianSettingsScreen> {
         );
       }
     } catch (e) {
-      setState(() => _isSaving = false);
+      // Guard setState in case the screen was closed while saving
+      if (mounted) setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -173,13 +176,18 @@ class _TechnicianSettingsScreenState extends State<TechnicianSettingsScreen> {
                       child: _personalInfo(),
                     ),
                     const SizedBox(height: 14),
+                    _credentialsCard(),
+                    const SizedBox(height: 14),
+                    TechnicianReportsCard(
+                      technicianDocId: widget.technicianDocId,
+                      technicianName: _nameController.text.trim(),
+                    ),
+                    const SizedBox(height: 14),
                     if (_isEditing)
                       _editActions()
-                    else ...[
-                      _securityCard(),
-                      const SizedBox(height: 14),
+                    else
+                      // Security card removed; only sign-out remains
                       _signOutCard(),
-                    ],
                   ],
                 ),
               ),
@@ -189,6 +197,53 @@ class _TechnicianSettingsScreenState extends State<TechnicianSettingsScreen> {
       ),
     );
   }
+
+  Widget _credentialsCard() => Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TechnicianCredentialsScreen(
+                  technicianDocId: widget.technicianDocId),
+            ),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.workspace_premium_outlined, size: 22),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Credentials & Resume',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark)),
+                      SizedBox(height: 2),
+                      Text(
+                        'Your specializations, NC II and other certificates.',
+                        style: TextStyle(
+                            fontSize: 12.5, color: AppColors.textGray),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right),
+              ],
+            ),
+          ),
+        ),
+      );
 
   PreferredSizeWidget _buildAppBar() => AppBar(
         elevation: 0,
@@ -522,47 +577,6 @@ class _TechnicianSettingsScreenState extends State<TechnicianSettingsScreen> {
         ),
         decoration: _decoration(icon, enabled: enabled),
         validator: validator,
-      );
-
-  Widget _securityCard() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: const Row(
-          children: [
-            _SettingsIconBox(icon: Icons.security_outlined),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Account Security',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    'Your account information is protected by your login credentials.',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.textGray,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right,
-                size: 19, color: Color(0xFF9CA3AF)),
-          ],
-        ),
       );
 
   Widget _editActions() => Container(

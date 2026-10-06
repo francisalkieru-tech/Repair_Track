@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../utils/colors.dart';
+import '../../utils/constants.dart';
 import '../../utils/ui_widgets.dart';
 
 class ServiceHistoryScreen extends StatelessWidget {
@@ -11,7 +12,7 @@ class ServiceHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF6F7F9),
       appBar: AppBar(
         title: const Text('Service History'),
         backgroundColor: AppColors.dark,
@@ -67,8 +68,11 @@ class ServiceHistoryScreen extends StatelessWidget {
     final createdAt = data['createdAt'] as Timestamp?;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header card
@@ -79,7 +83,7 @@ class ServiceHistoryScreen extends StatelessWidget {
               gradient: const LinearGradient(
                 colors: [Color(0xFF166534), Color(0xFF16A34A)],
               ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,7 +296,7 @@ class ServiceHistoryScreen extends StatelessWidget {
                                     CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    statusLabel,
+                                    AppConstants.displayLabel(statusLabel),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: AppColors.fontLabel,
@@ -389,13 +393,16 @@ class ServiceHistoryScreen extends StatelessWidget {
                 Text(
                   'Tracking ID: $trackingId',
                   style: const TextStyle(
-                      fontSize: 10, color: Color(0xFFD1D5DB)),
+                      fontSize: AppColors.fontCaption,
+                      color: AppColors.textLightGray),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 20),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -410,15 +417,16 @@ class ServiceHistoryScreen extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: Color(0x07000000),
+            blurRadius: 12,
+            offset: Offset(0, 3),
           ),
         ],
       ),
@@ -428,13 +436,13 @@ class ServiceHistoryScreen extends StatelessWidget {
           Row(
             children: [
               const Icon(Icons.shield_outlined,
-                  size: 16, color: AppColors.dark),
+                  size: 18, color: AppColors.dark),
               const SizedBox(width: 8),
               const Text(
                 'Warranty Information',
                 style: TextStyle(
-                  fontSize: AppColors.fontLabel,
-                  fontWeight: FontWeight.bold,
+                  fontSize: AppColors.fontBody,
+                  fontWeight: FontWeight.w700,
                   color: AppColors.textDark,
                 ),
               ),
@@ -462,9 +470,9 @@ class ServiceHistoryScreen extends StatelessWidget {
                 ),
             ],
           ),
-          const Divider(height: 16),
+          const Divider(height: 24, color: Color(0xFFE5E7EB)),
           _buildRow('Coverage',
-              months != null ? '$months ${months == 1 ? 'buwan' : 'buwan'}' : ''),
+              months != null ? '$months ${months == 1 ? 'month' : 'months'}' : ''),
           if (expiresAt != null)
             _buildRow('Valid Until', _formatDate(expiresAt.toDate())),
           if (terms.isNotEmpty) ...[
@@ -495,15 +503,16 @@ class ServiceHistoryScreen extends StatelessWidget {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: Color(0x07000000),
+            blurRadius: 12,
+            offset: Offset(0, 3),
           ),
         ],
       ),
@@ -512,19 +521,21 @@ class ServiceHistoryScreen extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: AppColors.dark),
+              Icon(icon, size: 18, color: AppColors.dark),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: AppColors.fontLabel,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: AppColors.fontBody,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
                 ),
               ),
             ],
           ),
-          const Divider(height: 16),
+          const Divider(height: 24, color: Color(0xFFE5E7EB)),
           child,
         ],
       ),
@@ -533,7 +544,7 @@ class ServiceHistoryScreen extends StatelessWidget {
 
   Widget _buildRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -542,14 +553,14 @@ class ServiceHistoryScreen extends StatelessWidget {
             child: Text(
               label,
               style: const TextStyle(
-                  fontSize: AppColors.fontCaption, color: AppColors.textGray),
+                  fontSize: AppColors.fontLabel, color: AppColors.textGray),
             ),
           ),
           Expanded(
             child: Text(
               value,
               style: const TextStyle(
-                  fontSize: AppColors.fontCaption,
+                  fontSize: AppColors.fontLabel,
                   fontWeight: FontWeight.w500,
                   color: AppColors.textDark),
             ),

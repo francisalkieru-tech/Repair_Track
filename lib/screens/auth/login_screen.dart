@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../customer/main_nav_screen.dart';
@@ -10,18 +9,20 @@ import 'customer_register_screen.dart';
 import 'admin_register.dart';
 import '../../utils/colors.dart';
 import '../../utils/ui_widgets.dart';
-import '../../utils/ui_widgets.dart';
 
+/// One login screen for customers, technicians and admins.
+///
+/// The role cards on top only decide which sign-up / setup link is shown
+/// below the form. The real role is always detected after sign-in by
+/// [AuthService.login], so picking the "wrong" card never blocks a login.
 class LoginScreen extends StatefulWidget {
-  final String role;
-  const LoginScreen({super.key, required this.role});
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>
-    with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -29,20 +30,16 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isPasswordVisible = false;
   bool _isLoading = false;
   String? _errorMessage;
-  late AnimationController _lottieController;
-
+  String _selectedRole = 'customer';
   bool _adminExists = true;
-  bool _checkedAdminExists = false;
 
   @override
   void initState() {
     super.initState();
-    _lottieController = AnimationController(vsync: this);
-    if (widget.role == 'admin') {
-      _checkIfAdminExists();
-    }
+    _checkIfAdminExists();
   }
 
+  // Shop setup is only offered until the first admin exists.
   Future<void> _checkIfAdminExists() async {
     try {
       final lockDoc = await FirebaseFirestore.instance
@@ -50,23 +47,14 @@ class _LoginScreenState extends State<LoginScreen>
           .doc('lock')
           .get();
       if (!mounted) return;
-      setState(() {
-        _adminExists = lockDoc.exists;
-        _checkedAdminExists = true;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _checkedAdminExists = true;
-      });
-    }
+      setState(() => _adminExists = lockDoc.exists);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _lottieController.dispose();
     super.dispose();
   }
 
@@ -209,17 +197,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  String _roleMismatchMessage(String actualRole) {
-    const labels = {
-      'admin': 'admin',
-      'technician': 'technician',
-      'customer': 'customer',
-    };
-    final triedLabel = labels[widget.role] ?? widget.role;
-    final actualLabel = labels[actualRole] ?? actualRole;
-    return 'This is a $actualLabel account. Use $actualLabel login instead of $triedLabel login.';
-  }
-
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -237,31 +214,28 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = false);
 
     if (result['success']) {
-      final actualRole = result['role'];
-      if (actualRole != widget.role) {
-        setState(() => _errorMessage = _roleMismatchMessage(actualRole));
-        return;
+      final actualRole = result['role'] as String?;
+      final Widget destination;
+
+      switch (actualRole) {
+        case 'admin':
+          destination = const AdminDashboardScreen();
+          break;
+        case 'technician':
+          destination = TechnicianMainNav(
+            technicianDocId: result['technicianDocId'] as String?,
+          );
+          break;
+        default:
+          destination = const MainNavScreen();
       }
 
-      if (widget.role == 'technician') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TechnicianMainNav(
-              technicianDocId: result['technicianDocId'] as String?,
-            ),
-          ),
-        );
-        return;
-      }
-
-      Navigator.pushReplacement(
+      // Wipe the whole back stack (Welcome + Login) so pressing Back from the
+      // home screen exits the app instead of returning to the login pages.
+      Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(
-          builder: (_) => widget.role == 'admin'
-              ? const AdminDashboardScreen()
-              : const MainNavScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => destination),
+        (route) => false,
       );
     } else {
       final authError = _authService.friendlyError(result['error']);
@@ -271,11 +245,78 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  String get _greeting {
+    switch (_selectedRole) {
+      case 'technician':
+        return 'Hello, technician!';
+      case 'admin':
+        return 'Hello, admin!';
+      default:
+        return 'Hello, customer!';
+    }
+  }
+
+  /// Sign-up / setup link that matches the selected role.
+  Widget _roleFooter() {
+    String? prompt;
+    String? action;
+    Widget Function()? screen;
+
+    switch (_selectedRole) {
+      case 'technician':
+        prompt = 'Have an invite code? ';
+        action = 'Set up technician account';
+        screen = () => const TechnicianAccountSetupScreen();
+        break;
+      case 'admin':
+        if (_adminExists) {
+          return const Text(
+            'Admin accounts are created during shop setup.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: AppColors.fontCaption, color: AppColors.textGray),
+          );
+        }
+        prompt = 'New shop? ';
+        action = 'Set up your shop';
+        screen = () => const AdminRegisterScreen();
+        break;
+      default:
+        prompt = "Don't have an account? ";
+        action = 'Sign up';
+        screen = () => const CustomerRegisterScreen();
+    }
+
+    // Wrap (not Row) so longer wording drops to a second line instead of
+    // overflowing the card.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(prompt,
+            style: const TextStyle(
+                fontSize: AppColors.fontLabel, color: AppColors.textGray)),
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => screen!()),
+          ),
+          child: Text(
+            action,
+            style: const TextStyle(
+              fontSize: AppColors.fontLabel,
+              color: AppColors.textDark,
+              fontWeight: FontWeight.bold,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isAdmin = widget.role == 'admin';
-    final isTechnician = widget.role == 'technician';
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Container(
@@ -295,59 +336,56 @@ class _LoginScreenState extends State<LoginScreen>
                         icon: const Icon(Icons.arrow_back),
                       ),
                     ),
-                    const SizedBox(height: 8),
-
-                    // Animated Logo — play once only
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        gradient: AppColors.darkGradient,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Lottie.asset(
-                          'assets/wired-outline-409-tool-in-reveal.json',
-                          controller: _lottieController,
-                          width: 80,
-                          height: 80,
-                          fit: BoxFit.cover,
-                          onLoaded: (composition) {
-                            _lottieController
-                              ..duration = composition.duration
-                              ..forward();
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    Text(
-                      isAdmin ? 'Admin Login' : 'Customer Login',
-                      style: const TextStyle(
-                        fontSize: 26,
+                    const Text(
+                      'Choose Account Type',
+                      style: TextStyle(
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: AppColors.textDark,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      isAdmin
-                          ? 'Manage repair requests and customers'
-                          : 'Sign in to track your repairs',
-                      style: const TextStyle(
-                          fontSize: AppColors.fontSubtitle,
-                          color: AppColors.textGray),
+                    const SizedBox(height: 20),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _RoleCard(
+                            icon: Icons.person_rounded,
+                            label: 'Customer',
+                            selected: _selectedRole == 'customer',
+                            onTap: () => setState(() {
+                              _selectedRole = 'customer';
+                              _errorMessage = null;
+                            }),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _RoleCard(
+                            icon: Icons.build_rounded,
+                            label: 'Technician',
+                            selected: _selectedRole == 'technician',
+                            onTap: () => setState(() {
+                              _selectedRole = 'technician';
+                              _errorMessage = null;
+                            }),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _RoleCard(
+                            icon: Icons.shield_rounded,
+                            label: 'Admin',
+                            selected: _selectedRole == 'admin',
+                            onTap: () => setState(() {
+                              _selectedRole = 'admin';
+                              _errorMessage = null;
+                            }),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
                     // Login Card
                     Card(
@@ -361,13 +399,13 @@ class _LoginScreenState extends State<LoginScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Welcome Back',
-                                  style: TextStyle(
+                              Text(_greeting,
+                                  style: const TextStyle(
                                       fontSize: AppColors.fontTitle,
                                       fontWeight: FontWeight.bold)),
                               const SizedBox(height: 8),
                               const Text(
-                                'Enter your credentials to access your account',
+                                'Please fill out the form below to get started',
                                 style: TextStyle(
                                     fontSize: AppColors.fontSubtitle,
                                     color: AppColors.textGray),
@@ -401,7 +439,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 ),
 
                               // Email
-                              Text(isAdmin ? 'Shop Email Address' : 'Email Address',
+                              const Text('Email Address',
                                   style: const TextStyle(
                                       fontSize: AppColors.fontLabel,
                                       fontWeight: FontWeight.w500)),
@@ -518,77 +556,7 @@ class _LoginScreenState extends State<LoginScreen>
                               const Divider(),
                               const SizedBox(height: 16),
 
-                              if (isTechnician)
-                                Center(
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      const Text(
-                                        'First time logging in? ',
-                                        style: TextStyle(
-                                            fontSize: AppColors.fontLabel,
-                                            color: AppColors.textGray),
-                                      ),
-                                      GestureDetector(
-                                        onTap: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const TechnicianAccountSetupScreen(),
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Set up your account',
-                                          style: TextStyle(
-                                            fontSize: AppColors.fontLabel,
-                                            color: AppColors.textDark,
-                                            fontWeight: FontWeight.bold,
-                                            decoration:
-                                                TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              else if (!isAdmin || (isAdmin && !_adminExists))
-                                Center(
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        isAdmin
-                                            ? 'New Shop? '
-                                            : "Don't have an account? ",
-                                        style: const TextStyle(
-                                            fontSize: AppColors.fontLabel,
-                                            color: AppColors.textGray),
-                                      ),
-                                      GestureDetector(
-                                        onTap: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => isAdmin
-                                                ? const AdminRegisterScreen()
-                                                : const CustomerRegisterScreen(),
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Register here',
-                                          style: TextStyle(
-                                            fontSize: AppColors.fontLabel,
-                                            color: AppColors.textDark,
-                                            fontWeight: FontWeight.bold,
-                                            decoration:
-                                                TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              Center(child: _roleFooter()),
                             ],
                           ),
                         ),
@@ -600,6 +568,82 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RoleCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RoleCard({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.dark : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? AppColors.dark : const Color(0xFFE1E4E8),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(selected ? 0.15 : 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Icon(icon,
+                    size: 30,
+                    color: selected ? Colors.white : AppColors.textGray),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: AppColors.fontLabel,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (selected)
+            Positioned(
+              top: -6,
+              right: -6,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle,
+                    size: 20, color: AppColors.success),
+              ),
+            ),
+        ],
       ),
     );
   }

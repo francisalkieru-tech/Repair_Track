@@ -55,7 +55,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-            builder: (_) => const LoginScreen(role: 'customer')),
+            builder: (_) => const LoginScreen()),
       );
     } else {
       setState(() => _errorMessage = _authService.friendlyError(error));
@@ -118,7 +118,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen> {
                     onSignIn: () => Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const LoginScreen(role: 'customer'),
+                        builder: (_) => const LoginScreen(),
                       ),
                     ),
                   ),

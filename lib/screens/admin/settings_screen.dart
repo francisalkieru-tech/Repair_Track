@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
 import '../auth/Welcome_screen.dart';
+import '../../utils/constants.dart';
 import 'admin_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -25,12 +26,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Container(
       color: kAdminBg,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 900;
 
+            // Grouped by purpose so the page reads in clear blocks:
+            // Business / Account on the left, Messaging / Data on the right.
             final leftColumn = <Widget>[
+              const _GroupLabel('Business'),
               _SettingsCard(
                 title: 'Shop / Business Info',
                 subtitle: 'This is what your customers see on receipts '
@@ -38,37 +42,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.storefront_outlined,
                 child: _ShopInfoSection(storageService: _storageService),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 28),
+              const _GroupLabel('Your Account'),
               _SettingsCard(
                 title: 'Account / Profile',
                 subtitle: 'Your personal admin login details.',
                 icon: Icons.person_outline,
                 child: const _AccountSettingsSection(),
               ),
-              const SizedBox(height: 14),
-              _SettingsCard(
-                title: 'Data & Security',
-                subtitle: 'Back up your repair records.',
-                icon: Icons.shield_outlined,
-                child: const _DataSecuritySection(),
-              ),
-              const SizedBox(height: 14),
-              _SettingsCard(
-                title: 'App Info',
-                subtitle: null,
-                icon: Icons.info_outline,
-                padded: false,
-                child: const _AppInfoSettingsSection(),
-              ),
             ];
 
             final rightColumn = <Widget>[
+              const _GroupLabel('Messaging'),
               _SettingsCard(
                 title: 'Notifications',
                 subtitle: 'Control the SMS messages sent to customers '
                     'for each repair status.',
                 icon: Icons.notifications_outlined,
                 child: const _NotificationSettingsSection(),
+              ),
+              const SizedBox(height: 28),
+              const _GroupLabel('Data & About'),
+              _SettingsCard(
+                title: 'Data & Security',
+                subtitle: 'Back up your repair records.',
+                icon: Icons.shield_outlined,
+                child: const _DataSecuritySection(),
+              ),
+              const SizedBox(height: 16),
+              _SettingsCard(
+                title: 'App Info',
+                subtitle: null,
+                icon: Icons.info_outline,
+                padded: false,
+                child: const _AppInfoSettingsSection(),
               ),
             ];
 
@@ -82,7 +89,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: leftColumn,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 20),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,11 +104,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ...leftColumn,
-                const SizedBox(height: 14),
+                const SizedBox(height: 28),
                 ...rightColumn,
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Small uppercase label that names a group of settings cards.
+class _GroupLabel extends StatelessWidget {
+  final String text;
+  const _GroupLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.1,
+          color: kAdminTextGray,
         ),
       ),
     );
@@ -128,12 +157,12 @@ class _SettingsCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: kAdminCardBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
+            blurRadius: 12,
             offset: const Offset(0, 3),
           ),
         ],
@@ -142,17 +171,18 @@ class _SettingsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(9),
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
                     color: kAdminBg,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(icon, size: 18, color: kAdminTextDark),
+                  child: Icon(icon, size: 19, color: kAdminTextDark),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -162,17 +192,18 @@ class _SettingsCard extends StatelessWidget {
                       Text(
                         title,
                         style: const TextStyle(
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: kAdminTextDark,
                         ),
                       ),
                       if (subtitle != null) ...[
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           subtitle!,
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 12.5,
+                            height: 1.35,
                             color: kAdminTextGray,
                           ),
                         ),
@@ -462,15 +493,15 @@ class _DataRow extends StatelessWidget {
                 Text(
                   label,
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     color: kAdminTextGray,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   value,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 14.5,
                     fontWeight: FontWeight.w500,
                     color: kAdminTextDark,
                   ),
@@ -805,7 +836,7 @@ class _ShopInfoSectionState extends State<_ShopInfoSection> {
                   const SizedBox(height: 2),
                   const Text(
                     'Tap the camera icon to update your shop logo.',
-                    style: TextStyle(fontSize: 11, color: kAdminTextGray),
+                    style: TextStyle(fontSize: 12, color: kAdminTextGray),
                   ),
                 ],
               ),
@@ -1116,7 +1147,7 @@ class _AccountSettingsSectionState extends State<_AccountSettingsSection> {
                   const SizedBox(height: 2),
                   Text(
                     _email.isEmpty ? 'No email on file' : _email,
-                    style: const TextStyle(fontSize: 11, color: kAdminTextGray),
+                    style: const TextStyle(fontSize: 12, color: kAdminTextGray),
                   ),
                 ],
               ),
@@ -1153,25 +1184,38 @@ class _AccountSettingsSectionState extends State<_AccountSettingsSection> {
 // Notification Settings
 const List<String> _kNotifiableStatuses = [
   'Accepted',
-  'In Home',
-  'In Shop',
+  'Tech Visit',
+  'On-Site',
   'In Process',
   'Waiting for Parts',
   'Completed',
   'Declined',
 ];
 
+// Old settings keys, so templates/toggles saved before the rename still load.
+String _legacyStatusKey(String status) {
+  switch (status) {
+    case 'Tech Visit':
+      return 'In Home';
+    case 'On-Site':
+      return 'In Shop';
+    default:
+      return status;
+  }
+}
+
 const Map<String, String> _kDefaultSmsTemplates = {
   'Accepted':
       'RepairTrack: Your repair request (ID: {trackingId}) for your '
           '{applianceType} has been ACCEPTED. Technician {technician} will '
           'be assisting you.',
-  'In Home':
-      'RepairTrack: Technician {technician} will visit your home to '
-          'repair your {applianceType}. Please be available at that time.',
-  'In Shop':
+  'Tech Visit':
+      'RepairTrack: Technician {technician} will make a Tech Visit to '
+          'your address to repair your {applianceType}. Please be available '
+          'at that time.',
+  'On-Site':
       'RepairTrack: Your {applianceType} (ID: {trackingId}) has been '
-          'brought to our shop for repair. Assigned to technician '
+          'received on-site at our shop. Assigned to technician '
           '{technician}. We will notify you once it is ready for pickup.',
   'In Process':
       'RepairTrack: Your {applianceType} repair (ID: {trackingId}) is '
@@ -1241,7 +1285,8 @@ class _NotificationSettingsSectionState
 
         if (smsMap != null) {
           for (final s in _kNotifiableStatuses) {
-            _smsToggles[s] = smsMap[s] as bool? ?? true;
+            _smsToggles[s] =
+                smsMap[s] as bool? ?? smsMap[_legacyStatusKey(s)] as bool? ?? true;
           }
         }
 
@@ -1252,7 +1297,8 @@ class _NotificationSettingsSectionState
         final data = templatesDoc.data() as Map<String, dynamic>;
 
         for (final s in _kNotifiableStatuses) {
-          final custom = data[s] as String?;
+          final custom =
+              data[s] as String? ?? data[_legacyStatusKey(s)] as String?;
 
           if (custom != null && custom.trim().isNotEmpty) {
             _customTemplates[s] = custom;
@@ -1447,9 +1493,14 @@ class _NotificationSettingsSectionState
         const Text(
           'SMS Notifications',
           style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w700, color: kAdminTextGray),
+              fontSize: 13, fontWeight: FontWeight.w700, color: kAdminTextDark),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
+        const Text(
+          'Turn a status on to text the customer when it changes.',
+          style: TextStyle(fontSize: 12, color: kAdminTextGray),
+        ),
+        const SizedBox(height: 6),
         ..._kNotifiableStatuses.map((status) {
           final template =
               _customTemplates[status] ?? _kDefaultSmsTemplates[status] ?? '';
@@ -1464,7 +1515,8 @@ class _NotificationSettingsSectionState
                   children: [
                     Expanded(
                       child: Text(
-                        status,
+                        // Show the friendly name (Tech Visit / On-Site)
+                        AppConstants.displayLabel(status),
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -1512,7 +1564,7 @@ class _NotificationSettingsSectionState
                         child: const Text(
                           'Customized',
                           style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF2563EB)),
                         ),
@@ -1529,9 +1581,14 @@ class _NotificationSettingsSectionState
                 const Divider(height: 1, color: kAdminCardBorder),
               ],
             )),
-        const SizedBox(height: 4),
+        const SizedBox(height: 16),
+        const Text(
+          'Email',
+          style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w700, color: kAdminTextDark),
+        ),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             children: [
               const Expanded(

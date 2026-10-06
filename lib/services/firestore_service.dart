@@ -67,6 +67,9 @@ class FirestoreService {
     String? photoUrl,
     int? warrantyMonths,
     String? warrantyTerms,
+    String? serviceMode, // 'shop' = On-Site (customer drops off), 'home' = Tech Visit
+    String? reassignedFrom, // previous technician, when Admin reassigns
+    bool assignedManually = false, // Admin overrode the queue's pick
   }) async {
     final historyEntry = <String, dynamic>{
       'status': newStatus,
@@ -76,8 +79,16 @@ class FirestoreService {
     if (partsSource != null) {
       historyEntry['partsSource'] = partsSource;
     }
+    // Keeps the ticket transparent when a new technician takes over
+    if (reassignedFrom != null) {
+      historyEntry['reassignedFrom'] = reassignedFrom;
+    }
     if (assignedTechnician != null) {
       historyEntry['technician'] = assignedTechnician;
+    }
+    // Audit flag: technician was chosen by Admin instead of the queue
+    if (assignedManually) {
+      historyEntry['assignedManually'] = true;
     }
     if (scheduledDate != null) {
       historyEntry['scheduledDate'] = Timestamp.fromDate(scheduledDate);
@@ -91,6 +102,9 @@ class FirestoreService {
       'statusHistory': FieldValue.arrayUnion([historyEntry]),
       'updatedAt': FieldValue.serverTimestamp(),
     };
+    if (serviceMode != null) {
+      updateData['serviceMode'] = serviceMode;
+    }
     if (assignedTechnician != null) {
       updateData['assignedTechnician'] = assignedTechnician;
     }
@@ -124,6 +138,85 @@ class FirestoreService {
 
   Stream<QuerySnapshot> streamTechnicians() {
     return _db.collection('technicians').orderBy('name').snapshots();
+  }
+
+  // CLOCK IN / CLOCK OUT (technician's own duty button)
+  // Sets the duty state on the technician doc and appends a row to
+  // technicians/{id}/dutyLogs so Admin can monitor attendance.
+  Future<void> clockInTechnician(String technicianDocId,
+      {String method = 'button'}) async {
+    final now = Timestamp.now();
+    await _db.collection('technicians').doc(technicianDocId).set({
+      'dutyStatus': AppConstants.dutyOnDuty,
+      'dutySince': now,
+    }, SetOptions(merge: true));
+    await _addDutyLog(technicianDocId, 'clock_in', now, method);
+  }
+
+  Future<void> clockOutTechnician(String technicianDocId,
+      {String method = 'button'}) async {
+    final now = Timestamp.now();
+    await _db.collection('technicians').doc(technicianDocId).set({
+      'dutyStatus': AppConstants.dutyOffDuty,
+      'dutyEndedAt': now,
+    }, SetOptions(merge: true));
+    await _addDutyLog(technicianDocId, 'clock_out', now, method);
+  }
+
+  Future<void> _addDutyLog(
+      String technicianDocId, String type, Timestamp at, String method) async {
+    try {
+      await _db
+          .collection('technicians')
+          .doc(technicianDocId)
+          .collection('dutyLogs')
+          .add({'type': type, 'timestamp': at, 'method': method});
+    } catch (_) {
+      // Non-fatal: the duty state itself already saved.
+    }
+  }
+
+  Stream<QuerySnapshot> streamDutyLogs(String technicianDocId,
+      {int limit = 20}) {
+    return _db
+        .collection('technicians')
+        .doc(technicianDocId)
+        .collection('dutyLogs')
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .snapshots();
+  }
+
+  // Technician assignment queue. [currentOrderIds] is the queue as Admin
+  // sees it now (technician doc ids, next-in-line first); every id in
+  // [moveToEnd] is moved to the back, in the order given. Positions are
+  // rewritten for the whole queue so they stay unique and gap-free.
+  Future<void> moveTechniciansToQueueEnd({
+    required List<String> currentOrderIds,
+    required List<String> moveToEnd,
+  }) async {
+    final moving = <String>[];
+    for (final id in moveToEnd) {
+      if (!currentOrderIds.contains(id)) continue;
+      moving.remove(id);
+      moving.add(id);
+    }
+    if (moving.isEmpty) return;
+
+    final newOrder = [
+      ...currentOrderIds.where((id) => !moving.contains(id)),
+      ...moving,
+    ];
+
+    final batch = _db.batch();
+    for (var i = 0; i < newOrder.length; i++) {
+      batch.set(
+        _db.collection('technicians').doc(newOrder[i]),
+        {'queuePosition': i},
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
   }
 
   // Used by the technician's own home screen to list jobs assigned

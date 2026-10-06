@@ -24,7 +24,7 @@ class ScheduleScreen extends StatelessWidget {
 
           final scheduledDocs = allDocs.where((d) {
             final data = d.data() as Map<String, dynamic>;
-            return data['status'] == 'In Home' &&
+            return AppConstants.isTechVisit(data['status'] as String?) &&
                 data['scheduledVisit'] != null;
           }).toList();
 
@@ -48,7 +48,7 @@ class ScheduleScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'In Home Repair Schedule',
+                    'Tech Visit Schedule',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
@@ -62,9 +62,9 @@ class ScheduleScreen extends StatelessWidget {
                 child: scheduledDocs.isEmpty
                     ? const Center(
                         child: Text(
-                          'No In Home visits scheduled right now.\n\n'
+                          'No Tech Visits scheduled right now.\n\n'
                           'Requests will show up here once their status is '
-                          'set to "In Home" with a schedule.',
+                          'set to "Tech Visit" with a schedule.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: kAdminTextGray),
                         ),
@@ -73,15 +73,22 @@ class ScheduleScreen extends StatelessWidget {
                         builder: (context, constraints) {
                           final crossAxisCount =
                               (constraints.maxWidth / 300).floor().clamp(1, 4);
+                          final isPhone = constraints.maxWidth < 600;
                           return GridView.builder(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 1.7,
-                            ),
+                            gridDelegate: isPhone
+                                ? const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 1,
+                                    mainAxisSpacing: 12,
+                                    crossAxisSpacing: 12,
+                                    mainAxisExtent: 172,
+                                  )
+                                : SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    mainAxisSpacing: 12,
+                                    crossAxisSpacing: 12,
+                                    childAspectRatio: 1.7,
+                                  ),
                             itemCount: scheduledDocs.length,
                             itemBuilder: (context, index) {
                               final doc = scheduledDocs[index];
@@ -343,7 +350,7 @@ void _showScheduleDetails(BuildContext context, Map<String, dynamic> data) {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Home Visit — $trackingId',
+                    'Tech Visit — $trackingId',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

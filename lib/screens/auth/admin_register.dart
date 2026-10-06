@@ -74,7 +74,7 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen>
       );
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const LoginScreen(role: 'admin')),
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
     } else {
       final message = error.contains('permission-denied')
@@ -371,8 +371,7 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen>
                                       onTap: () => Navigator.pushReplacement(
                                         context,
                                         MaterialPageRoute(
-                                            builder: (_) => const LoginScreen(
-                                                role: 'admin')),
+                                            builder: (_) => const LoginScreen()),
                                       ),
                                       child: const Text('Sign in',
                                           style: TextStyle(

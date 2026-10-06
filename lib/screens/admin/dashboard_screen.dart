@@ -3,248 +3,65 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/firestore_service.dart';
 import '../../utils/constants.dart';
+import '../../utils/technician_availability.dart';
+import 'admin_theme.dart';
 
+// Admin dashboard — kept minimal on purpose (panel feedback: not crowded).
+//   Row 1: Active Jobs | Technicians (active today / registered) | Completed Tasks
+//   Row 2: Today's Schedule (Tech Visits) — large
+//   Row 3: Technicians (who is on duty, repairing, available)
+//
+// Active Jobs = the repairs in the "In Process" tab; clicking the card opens
+// that tab. The card only mentions how many are Accepted / new.
+// "Active" technician = clocked in today (Clock In on the technician app).
+// Tapping Completed Tasks opens a list of the finished repairs for today /
+// this week / this month.
 class DashboardScreen extends StatelessWidget {
   final ValueChanged<int>? onNavigate;
 
-  const DashboardScreen({super.key, this.onNavigate});
+  /// Opens Repair Request on a given tab (0 New, 1 Accepted, 2 In Process).
+  final ValueChanged<int>? onOpenRequestsTab;
+
+  const DashboardScreen({super.key, this.onNavigate, this.onOpenRequestsTab});
 
   @override
   Widget build(BuildContext context) {
     final firestoreService = FirestoreService();
 
     return Container(
-      color: const Color(0xFFEFEFEF),
+      color: kAdminBg,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(14, 18, 20, 24),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
         child: StreamBuilder<QuerySnapshot>(
           stream: firestoreService.streamRepairRequests(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+          builder: (context, requestSnap) {
+            if (requestSnap.connectionState == ConnectionState.waiting) {
               return const Padding(
                 padding: EdgeInsets.only(top: 100),
                 child: Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.black,
-                  ),
+                  child: CircularProgressIndicator(color: Colors.black),
                 ),
               );
             }
 
-            final docs = snapshot.data?.docs ?? [];
-
-            final allData = docs
-                .map(
-                  (d) => d.data() as Map<String, dynamic>,
-                )
+            final all = (requestSnap.data?.docs ?? [])
+                .map((d) => d.data() as Map<String, dynamic>)
                 .toList();
 
-            // STATISTICS
-            final activeJobs = allData.where((data) {
-              final status = data['status'];
-              return status != 'Completed' &&
-                  status != 'Declined';
-            }).length;
+            return StreamBuilder<QuerySnapshot>(
+              stream: firestoreService.streamTechnicians(),
+              builder: (context, techSnap) {
+                final techs = (techSnap.data?.docs ?? [])
+                    .map((d) => d.data() as Map<String, dynamic>)
+                    .toList();
 
-            final today = DateTime.now();
-
-            bool isToday(Timestamp? timestamp) {
-              if (timestamp == null) return false;
-
-              final date = timestamp.toDate();
-
-              return date.year == today.year &&
-                  date.month == today.month &&
-                  date.day == today.day;
-            }
-
-            final completedToday = allData.where((data) {
-              return data['status'] == 'Completed' &&
-                  isToday(data['updatedAt'] as Timestamp?);
-            }).length;
-
-            final pendingCount = allData
-                .where((data) => data['status'] == 'Pending')
-                .length;
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-
-                // STAT CARDS
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final cards = [
-                      _StatCard(
-                        title: 'Active Jobs',
-                        value: '$activeJobs',
-                        icon: Icons.build_circle_rounded,
-                        onTap: onNavigate == null
-                            ? null
-                            : () => onNavigate!(1),
-                      ),
-
-                      StreamBuilder<QuerySnapshot>(
-                        stream: firestoreService.streamTechnicians(),
-                        builder: (context, techSnapshot) {
-                          final count =
-                              techSnapshot.data?.docs.length ?? 0;
-
-                          return _StatCard(
-                            title: 'Technicians',
-                            value: '$count',
-                            icon: Icons.engineering_rounded,
-                            onTap: onNavigate == null
-                                ? null
-                                : () => onNavigate!(3),
-                          );
-                        },
-                      ),
-
-                      _StatCard(
-                        title: 'Complete Today',
-                        value: '$completedToday',
-                        icon: Icons.task_alt_rounded,
-                        iconSuccess: true,
-                        onTap: onNavigate == null
-                            ? null
-                            : () => onNavigate!(2),
-                      ),
-
-                      _StatCard(
-                        title: 'Pending Requests',
-                        value: '$pendingCount',
-                        icon: Icons.notifications_active_rounded,
-                        onTap: onNavigate == null
-                            ? null
-                            : () => onNavigate!(1),
-                      ),
-                    ];
-
-                    if (constraints.maxWidth >= 700) {
-                      return Row(
-                        children: cards.map(
-                          (card) {
-                            return Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                                child: card,
-                              ),
-                            );
-                          },
-                        ).toList(),
-                      );
-                    }
-
-                    return GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics:
-                          const NeverScrollableScrollPhysics(),
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 1.9,
-                      children: cards,
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 26),
-
-                // TECHNICIANS + RECENT ACTIVITY
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final techniciansPanel =
-                        _TechnicianStatusPanel(
-                      allRequests: allData,
-                    );
-
-                    final activityPanel =
-                        _RecentActivityPanel(
-                      docs: docs.take(8).toList(),
-                    );
-
-                    if (constraints.maxWidth >= 850) {
-                      return IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              flex: 4,
-                              child: techniciansPanel,
-                            ),
-
-                            const SizedBox(width: 16),
-
-                            Expanded(
-                              flex: 6,
-                              child: activityPanel,
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    return Column(
-                      children: [
-                        techniciansPanel,
-                        const SizedBox(height: 16),
-                        activityPanel,
-                      ],
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 22),
-
-                // REPAIR TREND + TODAY'S SCHEDULE
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final trendPanel =
-                        _RepairTrendPanel(
-                      allRequests: allData,
-                    );
-
-                    final schedulePanel =
-                        _TodayScheduleCard(
-                      allRequests: allData,
-                    );
-
-                    if (constraints.maxWidth >= 850) {
-                      return IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              flex: 6,
-                              child: trendPanel,
-                            ),
-
-                            const SizedBox(width: 16),
-
-                            Expanded(
-                              flex: 4,
-                              child: schedulePanel,
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    return Column(
-                      children: [
-                        trendPanel,
-                        const SizedBox(height: 16),
-                        schedulePanel,
-                      ],
-                    );
-                  },
-                ),
-              ],
+                return _DashboardBody(
+                  all: all,
+                  techs: techs,
+                  onNavigate: onNavigate,
+                  onOpenRequestsTab: onOpenRequestsTab,
+                );
+              },
             );
           },
         ),
@@ -253,42 +70,320 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
+// HELPERS
+
+// Statuses where the appliance is actually being worked on (at the
+// customer's home, on the bench, or waiting on parts mid-repair).
+const Set<String> _repairStatuses = {
+  AppConstants.statusTechVisit,
+  AppConstants.statusOnSite,
+  AppConstants.statusInProcess,
+  AppConstants.statusWaitingParts,
+};
+
+bool _isRepairing(Map<String, dynamic> data) => _repairStatuses
+    .contains(AppConstants.normalizeStatus((data['status'] ?? '') as String));
+
+// Active job = exactly what the "In Process" tab of Repair Request lists:
+// not New (Pending), not just Accepted, not Completed, not Declined.
+// (So the number on the card always matches the tab it opens.)
+bool _isActive(Map<String, dynamic> data) {
+  final status = data['status'];
+  return status != AppConstants.statusPending &&
+      status != 'Accepted' &&
+      status != AppConstants.statusCompleted &&
+      status != AppConstants.statusDeclined;
+}
+
+// When a request was completed: latest "Completed" entry in its status
+// history (accurate even if the document is edited again later), falling
+// back to updatedAt for older records.
+DateTime? _completedAt(Map<String, dynamic> data) {
+  if (data['status'] != AppConstants.statusCompleted) return null;
+
+  DateTime? latest;
+  final history = data['statusHistory'];
+  if (history is List) {
+    for (final h in history) {
+      if (h is Map &&
+          h['status'] == AppConstants.statusCompleted &&
+          h['timestamp'] is Timestamp) {
+        final t = (h['timestamp'] as Timestamp).toDate();
+        if (latest == null || t.isAfter(latest)) latest = t;
+      }
+    }
+  }
+  if (latest != null) return latest;
+
+  final updated = data['updatedAt'];
+  return updated is Timestamp ? updated.toDate() : null;
+}
+
+// Monday 00:00 of the current week.
+DateTime _weekStart(DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  return today.subtract(Duration(days: now.weekday - 1));
+}
+
+String _formatTime(DateTime date) {
+  final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+  final minute = date.minute.toString().padLeft(2, '0');
+  final period = date.hour >= 12 ? 'PM' : 'AM';
+  return '$hour:$minute $period';
+}
+
+const _shortMonths = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+class _TechRow {
+  final String name;
+  final int activeJobs;
+  final int inRepair;
+  final bool clockedIn;
+  final String state; // 'available' | 'visit' | 'full' | 'off'
+
+  const _TechRow(
+    this.name,
+    this.activeJobs,
+    this.inRepair,
+    this.clockedIn,
+    this.state,
+  );
+}
+
+// Technician numbers for the dashboard, computed live. "Active" = clocked in
+// today. Available = clocked in and able to take a job.
+class _TechSummary {
+  final List<_TechRow> rows;
+  final int total;
+  final int active;
+  final int available;
+  final int onVisit;
+  final int fullyBooked;
+  final int offDuty; // not clocked in today (day off / not yet in)
+  final int queued; // has a job waiting to be processed
+
+  const _TechSummary({
+    required this.rows,
+    required this.total,
+    required this.active,
+    required this.available,
+    required this.onVisit,
+    required this.fullyBooked,
+    required this.offDuty,
+    required this.queued,
+  });
+
+  factory _TechSummary.from(
+    List<Map<String, dynamic>> all,
+    List<Map<String, dynamic>> techs,
+  ) {
+    final rows = <_TechRow>[];
+    var active = 0, available = 0, onVisit = 0, full = 0, queued = 0;
+
+    for (final tech in techs) {
+      final name = (tech['name'] ?? '') as String;
+      final jobs = activeJobsForTechnician(all, name);
+      final repairing = jobs.where(_isRepairing).length;
+      final visiting =
+          jobs.any((r) => AppConstants.isTechVisit(r['status'] as String?));
+      final clockedIn = isTechnicianClockedIn(tech);
+      final free = isTechnicianAssignable(all, tech);
+
+      final state = !clockedIn
+          ? 'off'
+          : free
+              ? 'available'
+              : (visiting ? 'visit' : 'full');
+
+      if (clockedIn) active++;
+      if (state == 'available') available++;
+      if (state == 'visit') onVisit++;
+      if (state == 'full') full++;
+      if (jobs.any((r) => r['status'] == AppConstants.statusQueued)) queued++;
+
+      rows.add(_TechRow(name, jobs.length, repairing, clockedIn, state));
+    }
+
+    // Clocked-in technicians first
+    rows.sort((a, b) {
+      final byDuty = (a.clockedIn ? 0 : 1).compareTo(b.clockedIn ? 0 : 1);
+      return byDuty != 0 ? byDuty : a.name.compareTo(b.name);
+    });
+
+    return _TechSummary(
+      rows: rows,
+      total: techs.length,
+      active: active,
+      available: available,
+      onVisit: onVisit,
+      fullyBooked: full,
+      offDuty: techs.length - active,
+      queued: queued,
+    );
+  }
+}
+
+// BODY
+class _DashboardBody extends StatelessWidget {
+  final List<Map<String, dynamic>> all;
+  final List<Map<String, dynamic>> techs;
+  final ValueChanged<int>? onNavigate;
+  final ValueChanged<int>? onOpenRequestsTab;
+
+  const _DashboardBody({
+    required this.all,
+    required this.techs,
+    required this.onNavigate,
+    this.onOpenRequestsTab,
+  });
+
+  VoidCallback? _go(int index) =>
+      onNavigate == null ? null : () => onNavigate!(index);
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _TechSummary.from(all, techs);
+
+    // Active Jobs = assigned and in process. The subtitle splits them into
+    // the ones being repaired and the ones not started yet; new requests are
+    // only mentioned, not counted.
+    final activeList = all.where(_isActive).toList();
+    final accepted = all.where((d) => d['status'] == 'Accepted').length;
+    final newRequests =
+        all.where((d) => d['status'] == AppConstants.statusPending).length;
+
+    final completedList = all
+        .where((d) => d['status'] == AppConstants.statusCompleted)
+        .toList();
+
+    final activeCard = _StatCard(
+      title: 'Active Jobs',
+      value: '${activeList.length}',
+      subtitle: '$accepted accepted • $newRequests new',
+      icon: Icons.build_circle_rounded,
+      // Straight to the In Process tab
+      onTap: onOpenRequestsTab == null
+          ? _go(1)
+          : () => onOpenRequestsTab!(2),
+    );
+
+    final techCard = _StatCard(
+      title: 'Technicians',
+      value: '${summary.active}/${summary.total}',
+      subtitle: 'Active today / registered',
+      icon: Icons.engineering_rounded,
+      onTap: _go(3),
+    );
+
+    final completedCard = _StatCard(
+      title: 'Completed Tasks',
+      value: '${completedList.length}',
+      subtitle: 'Tap to see today, week, month',
+      icon: Icons.task_alt_rounded,
+      iconSuccess: true,
+      onTap: () => _showCompletedTasksDialog(
+        context,
+        completedList,
+        onViewAll: _go(2),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // STAT CARDS
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 640) {
+              final cards = [activeCard, techCard, completedCard];
+              return Row(
+                children: [
+                  for (int i = 0; i < cards.length; i++)
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: i == 0 ? 0 : 6,
+                          right: i == cards.length - 1 ? 0 : 6,
+                        ),
+                        child: cards[i],
+                      ),
+                    ),
+                ],
+              );
+            }
+
+            // Phones: two on top, Completed Tasks full width below.
+            return Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: activeCard),
+                    const SizedBox(width: 12),
+                    Expanded(child: techCard),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(width: double.infinity, child: completedCard),
+              ],
+            );
+          },
+        ),
+
+        const SizedBox(height: 22),
+
+        // TODAY'S SCHEDULE (big, full width)
+        _TodayScheduleCard(all: all),
+
+        const SizedBox(height: 22),
+
+        // TECHNICIANS (bottom)
+        _TechnicianPanel(summary: summary),
+      ],
+    );
+  }
+}
+
 // STAT CARD
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
+  final String? subtitle;
   final IconData icon;
   final bool iconSuccess;
+  final Widget? footer;
   final VoidCallback? onTap;
 
   const _StatCard({
     required this.title,
     required this.value,
     required this.icon,
+    this.subtitle,
     this.iconSuccess = false,
+    this.footer,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = iconSuccess ? Colors.green : Colors.black;
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        mouseCursor: onTap == null
-            ? SystemMouseCursors.basic
-            : SystemMouseCursors.click,
+        mouseCursor:
+            onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
         child: Container(
-          height: 112,
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          height: 124,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
           decoration: BoxDecoration(
-            color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: const Color(0xFFBDBDBD),
-            ),
+            border: Border.all(color: const Color(0xFFBDBDBD)),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x22000000),
@@ -302,29 +397,47 @@ class _StatCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black,
+                  Padding(
+                    padding: const EdgeInsets.only(right: 36),
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
                     ),
                   ),
-
                   const Spacer(),
-
                   Text(
                     value,
                     style: const TextStyle(
-                      fontSize: 42,
+                      fontSize: 36,
                       height: 1,
                       fontWeight: FontWeight.w400,
                       color: Colors.black,
                     ),
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                  ],
+                  if (footer != null) ...[
+                    const SizedBox(height: 6),
+                    footer!,
+                  ],
                 ],
               ),
-
               Positioned(
                 top: 0,
                 right: 0,
@@ -333,16 +446,9 @@ class _StatCard extends StatelessWidget {
                   height: 30,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: iconSuccess ? Colors.green : Colors.black,
-                      width: 1.5,
-                    ),
+                    border: Border.all(color: accent, width: 1.5),
                   ),
-                  child: Icon(
-                    icon,
-                    size: 17,
-                    color: iconSuccess ? Colors.green : Colors.black,
-                  ),
+                  child: Icon(icon, size: 17, color: accent),
                 ),
               ),
             ],
@@ -353,29 +459,299 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// COMMON PANEL
-class _DashboardPanel extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final Widget child;
+// Small pill used for the Today / Week / Month style toggles.
+class _ToggleChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
-  const _DashboardPanel({
+  const _ToggleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          color: selected ? Colors.black : const Color(0xFFEFEFEF),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : const Color(0xFF444444),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// COMPLETED TASKS DIALOG (Today / This Week / This Month)
+// Opened from the Completed Tasks card: lists the repairs that were
+// finished in the chosen period, newest first.
+void _showCompletedTasksDialog(
+  BuildContext context,
+  List<Map<String, dynamic>> completed, {
+  VoidCallback? onViewAll,
+}) {
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      var period = 0; // 0 = today, 1 = this week, 2 = this month
+
+      return StatefulBuilder(
+        builder: (context, setState) {
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+
+          late final DateTime from;
+          late final DateTime to;
+          switch (period) {
+            case 1:
+              from = _weekStart(now);
+              to = from.add(const Duration(days: 7));
+              break;
+            case 2:
+              from = DateTime(now.year, now.month, 1);
+              to = DateTime(now.year, now.month + 1, 1);
+              break;
+            default:
+              from = today;
+              to = today.add(const Duration(days: 1));
+          }
+
+          final items = completed.where((d) {
+            final t = _completedAt(d);
+            return t != null && !t.isBefore(from) && t.isBefore(to);
+          }).toList()
+            ..sort((a, b) => _completedAt(b)!.compareTo(_completedAt(a)!));
+
+          const labels = ['Today', 'This Week', 'This Month'];
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Completed Tasks',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          icon: const Icon(Icons.close),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        for (int i = 0; i < labels.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 8),
+                          _ToggleChip(
+                            label: labels[i],
+                            selected: period == i,
+                            onTap: () => setState(() => period = i),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '${items.length} repair${items.length == 1 ? '' : 's'} '
+                      'completed ${labels[period].toLowerCase()}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Flexible(
+                      child: items.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 36),
+                              child: Center(
+                                child: Text(
+                                  'No completed repairs in this period.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF777777),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              itemCount: items.length,
+                              separatorBuilder: (_, __) => const Divider(
+                                height: 14,
+                                color: Color(0xFFEDEDED),
+                              ),
+                              itemBuilder: (context, index) {
+                                final d = items[index];
+                                final done = _completedAt(d)!;
+                                final appliance =
+                                    (d['applianceType'] ?? '') as String;
+                                final model =
+                                    ((d['applianceModel'] ?? '') as String)
+                                        .trim();
+                                final customer = (d['name'] ?? '') as String;
+                                final tech = (d['assignedTechnician'] ??
+                                    'Unassigned') as String;
+                                final trackingId =
+                                    (d['trackingId'] ?? '') as String;
+
+                                // Today: just the time. Otherwise date + time.
+                                final when = period == 0
+                                    ? _formatTime(done)
+                                    : '${_shortMonths[done.month - 1]} '
+                                        '${done.day} • ${_formatTime(done)}';
+
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 1),
+                                      child: Icon(
+                                        Icons.check_circle,
+                                        size: 18,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            model.isEmpty
+                                                ? appliance
+                                                : '$appliance • $model',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black,
+                                            ),
+                                          ),
+                                          Text(
+                                            trackingId.isEmpty
+                                                ? customer
+                                                : '$customer • $trackingId',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF555555),
+                                            ),
+                                          ),
+                                          Text(
+                                            'Technician: $tech',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF374151),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      when,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF666666),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                    ),
+                    if (onViewAll != null) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            onViewAll();
+                          },
+                          child: const Text('View all completed'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+// COMMON PANEL SHELL
+class _Panel extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final Widget child;
+  final double height;
+
+  const _Panel({
     required this.title,
-    required this.subtitle,
     required this.child,
+    this.subtitle,
+    this.trailing,
+    this.height = 290,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: height,
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: const Color(0xFFBDBDBD),
-        ),
+        border: Border.all(color: const Color(0xFFBDBDBD)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
@@ -385,32 +761,242 @@ class _DashboardPanel extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF666666),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
           ),
+          const SizedBox(height: 10),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
 
-          const SizedBox(height: 2),
+// TECHNICIANS (registered / available / on Tech Visit / fully booked / online)
+class _TechnicianPanel extends StatelessWidget {
+  final _TechSummary summary;
 
+  const _TechnicianPanel({required this.summary});
+
+  Widget _summaryChip(String label, int value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
           Text(
-            subtitle,
+            '$label $value',
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFF666666),
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF374151),
             ),
           ),
+        ],
+      ),
+    );
+  }
 
+  (String, Color, Color) _badge(String state) {
+    switch (state) {
+      case 'available':
+        return ('Available', Colors.green, const Color(0xFFD9F8E4));
+      case 'visit':
+        return (
+          'On ${AppConstants.statusTechVisit}',
+          const Color(0xFF5B21B6),
+          const Color(0xFFEBDDFF),
+        );
+      case 'off':
+        return ('Off duty', const Color(0xFF555555), const Color(0xFFE5E5E5));
+      default:
+        return ('Fully booked', const Color(0xFF92400E), const Color(0xFFFEF3C7));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: 'Technicians',
+      subtitle: 'Who is on duty, repairing and available',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _summaryChip('Registered', summary.total, Colors.black),
+              _summaryChip('On duty', summary.active, Colors.green),
+              _summaryChip('Off duty', summary.offDuty, Colors.grey),
+              _summaryChip('Available', summary.available,
+                  const Color(0xFF2563EB)),
+              _summaryChip('On Tech Visit', summary.onVisit,
+                  const Color(0xFF5B21B6)),
+              _summaryChip('Queued', summary.queued,
+                  const Color(0xFF0E7490)),
+              _summaryChip('Fully booked', summary.fullyBooked,
+                  const Color(0xFFD97706)),
+            ],
+          ),
           const SizedBox(height: 10),
-
           Expanded(
-            child: child,
+            child: summary.rows.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No technicians yet.',
+                      style:
+                          TextStyle(fontSize: 12, color: Color(0xFF777777)),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.zero,
+                    itemCount: summary.rows.length,
+                    itemBuilder: (context, index) {
+                      final row = summary.rows[index];
+                      final badge = _badge(row.state);
+
+                      final jobsText = row.activeJobs == 0
+                          ? 'No active jobs'
+                          : '${row.activeJobs} active job'
+                              '${row.activeJobs == 1 ? '' : 's'}'
+                              ' • ${row.inRepair} in repair';
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 9),
+                        child: Row(
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      row.name.isNotEmpty
+                                          ? row.name[0].toUpperCase()
+                                          : '?',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Green dot = clocked in today
+                                if (row.clockedIn)
+                                  Positioned(
+                                    right: -1,
+                                    bottom: -1,
+                                    child: Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: Colors.white, width: 1.5),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    row.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  Text(
+                                    jobsText,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF777777),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: badge.$3,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                badge.$1,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: badge.$2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -418,966 +1004,244 @@ class _DashboardPanel extends StatelessWidget {
   }
 }
 
-// TECHNICIAN STATUS
-class _TechnicianStatusPanel extends StatelessWidget {
-  final List<Map<String, dynamic>> allRequests;
+// TODAY'S SCHEDULE (Tech Visits)
+// Each row: date, time, customer name, address and the problem.
+const _weekdayNames = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+  'Friday', 'Saturday', 'Sunday',
+];
 
-  const _TechnicianStatusPanel({
-    required this.allRequests,
-  });
+class _TodayScheduleCard extends StatelessWidget {
+  final List<Map<String, dynamic>> all;
+
+  const _TodayScheduleCard({required this.all});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 250,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: const Color(0xFFBDBDBD),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Technicians Status',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
-          ),
+    final now = DateTime.now();
 
-          const SizedBox(height: 2),
+    final todayJobs = all.where((data) {
+      final ts = data['scheduledVisit'];
+      if (ts is! Timestamp) return false;
+      if (data['status'] == AppConstants.statusDeclined) return false;
+      final d = ts.toDate();
+      return d.year == now.year && d.month == now.month && d.day == now.day;
+    }).toList()
+      ..sort((a, b) => (a['scheduledVisit'] as Timestamp)
+          .compareTo(b['scheduledVisit'] as Timestamp));
 
-          const Text(
-            'Current active jobs load per technicians',
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF666666),
-            ),
-          ),
+    final dateLabel = '${_weekdayNames[now.weekday - 1]}, '
+        '${_shortMonths[now.month - 1]} ${now.day}';
 
-          const SizedBox(height: 10),
+    return _Panel(
+      title: "Today's Schedule",
+      subtitle: todayJobs.isEmpty
+          ? '$dateLabel • No Tech Visits'
+          : '$dateLabel • ${todayJobs.length} Tech Visit'
+              '${todayJobs.length == 1 ? '' : 's'}',
+      height: 460,
+      child: todayJobs.isEmpty
+          ? const Center(
+              child: Text(
+                'No Tech Visits scheduled today.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF777777)),
+              ),
+            )
+          : ListView.separated(
+              padding: EdgeInsets.zero,
+              itemCount: todayJobs.length,
+              separatorBuilder: (context, index) =>
+                  const Divider(height: 24, color: Color(0xFFEDEDED)),
+              itemBuilder: (context, index) {
+                final data = todayJobs[index];
+                final visit = (data['scheduledVisit'] as Timestamp).toDate();
 
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream:
-                  FirestoreService().streamTechnicians(),
-              builder: (context, snapshot) {
-                final technicians =
-                    snapshot.data?.docs ?? [];
+                final customer = (data['name'] ?? '') as String;
+                final address = (data['address'] ?? '') as String;
+                final issue = (data['problemDescription'] ?? '') as String;
+                final technician =
+                    (data['assignedTechnician'] ?? 'Unassigned') as String;
+                final appliance = (data['applianceType'] ?? '') as String;
+                final brand = ((data['brand'] ?? '') as String).trim();
+                final model = ((data['applianceModel'] ?? '') as String).trim();
+                final brandModel =
+                    [brand, model].where((s) => s.isNotEmpty).join(' • ');
+                final status = (data['status'] ?? '') as String;
+                final badgeColors = statusColors(status);
 
-                if (technicians.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No technicians yet.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF777777),
-                      ),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: technicians.length,
-                  itemBuilder: (context, index) {
-                    final doc = technicians[index];
-
-                    final data =
-                        doc.data()
-                            as Map<String, dynamic>;
-
-                    final name =
-                        data['name'] ?? '';
-
-                    final assignedJobs =
-                        allRequests.where((request) {
-                      return request[
-                                  'assignedTechnician'] ==
-                              name &&
-                          request['status'] !=
-                              'Completed' &&
-                          request['status'] !=
-                              'Declined';
-                    }).toList();
-
-                    String location =
-                        'Available';
-
-                    Color locationColor =
-                        Colors.green;
-
-                    Color locationBackground =
-                        const Color(0xFFD9F8E4);
-
-                    if (assignedJobs.isNotEmpty) {
-                      final status =
-                          assignedJobs.first[
-                              'status'];
-
-                      if (status == 'In Home') {
-                        location = 'In Home';
-                        locationColor =
-                            const Color(0xFF5B21B6);
-                        locationBackground =
-                            const Color(0xFFEBDDFF);
-                      } else if (status ==
-                          'In Shop') {
-                        location = 'In Shop';
-                        locationColor =
-                            const Color(0xFF1565C0);
-                        locationBackground =
-                            const Color(0xFFDDEEFF);
-                      } else {
-                        location = status != null
-                            ? AppConstants.displayLabel(status as String)
-                            : 'Assigned';
-                        locationColor =
-                            Colors.black;
-                        locationBackground =
-                            const Color(0xFFEFEFEF);
-                      }
-                    }
-
-                    return Padding(
-                      padding:
-                          const EdgeInsets.only(
-                        bottom: 9,
-                      ),
-                      child: Row(
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Date + time
+                    SizedBox(
+                      width: 92,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Avatar
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration:
-                                const BoxDecoration(
-                              color: Colors.black,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                name.isNotEmpty
-                                    ? name[0]
-                                        .toUpperCase()
-                                    : '?',
-                                style:
-                                    const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight:
-                                      FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
+                          Text(
+                            '${_shortMonths[visit.month - 1]} ${visit.day}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF666666),
                             ),
                           ),
-
-                          const SizedBox(width: 9),
-
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment
-                                      .start,
-                              children: [
-                                Text(
-                                  name,
+                          const SizedBox(height: 2),
+                          Text(
+                            _formatTime(visit),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Customer, address, problem
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            appliance.isEmpty
+                                ? customer
+                                : '$customer • $appliance',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.engineering_outlined,
+                                size: 15,
+                                color: Color(0xFF666666),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Technician: $technician  •  '
+                                  'Ticket ${data['trackingId'] ?? ''}',
                                   maxLines: 1,
-                                  overflow:
-                                      TextOverflow
-                                          .ellipsis,
-                                  style:
-                                      const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight:
-                                        FontWeight.w700,
-                                    color:
-                                        Colors.black,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF444444),
                                   ),
                                 ),
-
-                                Text(
-                                  '${assignedJobs.length} job(s) assigned',
-                                  style:
-                                      const TextStyle(
-                                    fontSize: 11,
-                                    color:
-                                        Color(0xFF777777),
+                              ),
+                            ],
+                          ),
+                          if (brandModel.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.devices_other_outlined,
+                                  size: 15,
+                                  color: Color(0xFF666666),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'Brand / Model: $brandModel',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF444444),
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-
-                          Container(
-                            padding:
-                                const EdgeInsets
-                                    .symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                          ],
+                          if (address.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 1),
+                                  child: Icon(
+                                    Icons.location_on_outlined,
+                                    size: 15,
+                                    color: Color(0xFF666666),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    address,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF444444),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            decoration:
-                                BoxDecoration(
-                              color:
-                                  locationBackground,
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(10),
+                          ],
+                          if (issue.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 1),
+                                  child: Icon(
+                                    Icons.build_outlined,
+                                    size: 15,
+                                    color: Color(0xFF666666),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    issue,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF444444),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: Text(
-                              location,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight:
-                                    FontWeight.w700,
-                                color:
-                                    locationColor,
-                              ),
-                            ),
-                          ),
+                          ],
                         ],
                       ),
-                    );
-                  },
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: badgeColors.$1,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        AppConstants.displayLabel(status),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: badgeColors.$2,
+                        ),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
-          ),
-        ],
-      ),
     );
-  }
-}
-
-// RECENT ACTIVITY
-class _RecentActivityPanel extends StatelessWidget {
-  final List<QueryDocumentSnapshot> docs;
-
-  const _RecentActivityPanel({
-    required this.docs,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 250,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: const Color(0xFFBDBDBD),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Recent Activity',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
-          ),
-
-          const SizedBox(height: 2),
-
-          Text(
-            'Latest ${docs.length} repair requests',
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFF666666),
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          // Header
-          const Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Text(
-                  'Tracking ID',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 3,
-                child: Text(
-                  'Appliance Type',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Assign Tech.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 72,
-                child: Text(
-                  'Status',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 6),
-
-          Expanded(
-            child: docs.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No requests yet.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF777777),
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: EdgeInsets.zero,
-                    itemCount: docs.length,
-                    itemBuilder: (context, index) {
-                      final data =
-                          docs[index].data()
-                              as Map<String, dynamic>;
-
-                      final status =
-                          data['status'] ??
-                              'Pending';
-
-                      final colors =
-                          _statusColors(status);
-
-                      return Padding(
-                        padding:
-                            const EdgeInsets.only(
-                          bottom: 7,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                data['trackingId'] ??
-                                    '',
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight:
-                                      FontWeight.w600,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                data['applianceType'] ??
-                                    '',
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 11,
-                                  color:
-                                      Color(0xFF555555),
-                                ),
-                              ),
-                            ),
-
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                data[
-                                        'assignedTechnician'] ??
-                                    '—',
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 11,
-                                  color:
-                                      Color(0xFF555555),
-                                ),
-                              ),
-                            ),
-
-                            SizedBox(
-                              width: 72,
-                              child: Align(
-                                alignment:
-                                    Alignment.centerLeft,
-                                child: Container(
-                                  padding:
-                                      const EdgeInsets
-                                          .symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration:
-                                      BoxDecoration(
-                                    color: colors.$1,
-                                    borderRadius:
-                                        BorderRadius
-                                            .circular(
-                                      10,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    AppConstants.displayLabel(status),
-                                    maxLines: 1,
-                                    overflow:
-                                        TextOverflow
-                                            .ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      fontWeight:
-                                          FontWeight.w700,
-                                      color:
-                                          colors.$2,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// REPAIR TREND
-class _RepairTrendPanel extends StatelessWidget {
-  final List<Map<String, dynamic>> allRequests;
-
-  const _RepairTrendPanel({
-    required this.allRequests,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-
-    const weekdays = [
-      'Mon',
-      'Tue',
-      'Wed',
-      'Thu',
-      'Fri',
-      'Sat',
-      'Sun',
-    ];
-
-    final monday = now.subtract(
-      Duration(days: now.weekday - 1),
-    );
-
-    final dayCounts = <int>[];
-
-    for (int i = 0; i < 7; i++) {
-      final day = monday.add(
-        Duration(days: i),
-      );
-
-      final count = allRequests.where((data) {
-        if (data['status'] != 'Completed') {
-          return false;
-        }
-
-        final timestamp =
-            data['updatedAt'] as Timestamp?;
-
-        if (timestamp == null) {
-          return false;
-        }
-
-        final date = timestamp.toDate();
-
-        return date.year == day.year &&
-            date.month == day.month &&
-            date.day == day.day;
-      }).length;
-
-      dayCounts.add(count);
-    }
-
-    final maxCount = dayCounts.isEmpty
-        ? 1
-        : dayCounts.reduce(
-            (a, b) => a > b ? a : b,
-          );
-
-    final safeMax =
-        maxCount < 1 ? 1 : maxCount;
-
-    return Container(
-      height: 250,
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        10,
-        12,
-        10,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: const Color(0xFFBDBDBD),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Repair Trend',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
-          ),
-
-          const Text(
-            'Repair completed per day, last 7 days',
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF666666),
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          Expanded(
-            child: Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment.end,
-              children: List.generate(
-                7,
-                (index) {
-                  final barHeight =
-                      (dayCounts[index] /
-                              safeMax) *
-                          70;
-
-                  return Expanded(
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(
-                        horizontal: 6,
-                      ),
-                      child: Column(
-                        mainAxisAlignment:
-                            MainAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${dayCounts[index]}',
-                            style:
-                                const TextStyle(
-                              fontSize: 11,
-                              color:
-                                  Colors.blue,
-                              fontWeight:
-                                  FontWeight.w500,
-                            ),
-                          ),
-
-                          const SizedBox(height: 3),
-
-                          Container(
-                            width: double.infinity,
-                            height: barHeight < 3
-                                ? 3
-                                : barHeight,
-                            decoration:
-                                BoxDecoration(
-                              color:
-                                  const Color(
-                                0xFFD5D5D5,
-                              ),
-                              borderRadius:
-                                  BorderRadius.circular(
-                                5,
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 5),
-
-                          Text(
-                            weekdays[index],
-                            style:
-                                const TextStyle(
-                              fontSize: 12,
-                              fontWeight:
-                                  FontWeight.w600,
-                              color:
-                                  Colors.black,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// TODAY'S SCHEDULE
-class _TodayScheduleCard extends StatelessWidget {
-  final List<Map<String, dynamic>> allRequests;
-
-  const _TodayScheduleCard({
-    required this.allRequests,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-
-    bool isToday(DateTime date) {
-      return date.year == now.year &&
-          date.month == now.month &&
-          date.day == now.day;
-    }
-
-    final todayJobs =
-        allRequests.where((data) {
-      final timestamp =
-          data['scheduledVisit']
-              as Timestamp?;
-
-      if (timestamp == null) {
-        return false;
-      }
-
-      return isToday(timestamp.toDate());
-    }).toList();
-
-    todayJobs.sort((a, b) {
-      final aDate =
-          (a['scheduledVisit'] as Timestamp)
-              .toDate();
-
-      final bDate =
-          (b['scheduledVisit'] as Timestamp)
-              .toDate();
-
-      return aDate.compareTo(bDate);
-    });
-
-    return Container(
-      height: 250,
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        10,
-        12,
-        10,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: const Color(0xFFBDBDBD),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Today's Schedule",
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
-          ),
-
-          const Text(
-            'Schedule for home visit',
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF666666),
-            ),
-          ),
-
-          const SizedBox(height: 9),
-
-          // Table header
-          const Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Text(
-                  'Technicians',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 5,
-                child: Text(
-                  'Customer Address',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 3,
-                child: Text(
-                  'Date & Time',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 6),
-
-          Expanded(
-            child: todayJobs.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No home visits scheduled today.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF777777),
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: EdgeInsets.zero,
-                    itemCount: todayJobs.length,
-                    itemBuilder: (context, index) {
-                      final data =
-                          todayJobs[index];
-
-                      final timestamp =
-                          data['scheduledVisit']
-                              as Timestamp;
-
-                      final date =
-                          timestamp.toDate();
-
-                      final hour =
-                          date.hour % 12 == 0
-                              ? 12
-                              : date.hour % 12;
-
-                      final ampm =
-                          date.hour >= 12
-                              ? 'PM'
-                              : 'AM';
-
-                      final time =
-                          '$hour:${date.minute.toString().padLeft(2, '0')} $ampm';
-
-                      final technician =
-                          data[
-                                  'assignedTechnician'] ??
-                              'Unassigned';
-
-                      final address =
-                          data['address'] ??
-                              data[
-                                  'customerAddress'] ??
-                              '';
-
-                      return Padding(
-                        padding:
-                            const EdgeInsets.only(
-                          bottom: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                technician,
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight:
-                                      FontWeight.w600,
-                                ),
-                              ),
-                            ),
-
-                            Expanded(
-                              flex: 5,
-                              child: Text(
-                                address,
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 10.5,
-                                  color:
-                                      Color(0xFF555555),
-                                ),
-                              ),
-                            ),
-
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                time,
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight:
-                                      FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// STATUS COLORS
-(Color, Color) _statusColors(String status) {
-  switch (status) {
-    case 'New Request':
-      return (
-        const Color(0xFFFFE8D6),
-        const Color(0xFFEA580C),
-      );
-
-    case 'In Home':
-      return (
-        const Color(0xFFE8D8FF),
-        const Color(0xFF6D28D9),
-      );
-
-    case 'In Shop':
-      return (
-        const Color(0xFFDCEEFF),
-        const Color(0xFF1565C0),
-      );
-
-    case 'Completed':
-      return (
-        const Color(0xFFD9F8E4),
-        const Color(0xFF16A34A),
-      );
-
-    case 'Cancelled':
-    case 'Declined':
-      return (
-        const Color(0xFFFFDDDD),
-        const Color(0xFFDC2626),
-      );
-
-    default:
-      return (
-        const Color(0xFFEFEFEF),
-        const Color(0xFF444444),
-      );
   }
 }
