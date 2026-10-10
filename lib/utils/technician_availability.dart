@@ -117,8 +117,8 @@ Map<String, dynamic>? nextTechnicianInQueue(
   String? applianceType,
 }) {
   final skip = <String>{
-    if (excludeName != null) excludeName,
-    if (excludeNames != null) ...excludeNames,
+    ?excludeName,
+    ...?excludeNames,
   };
   final free = orderTechnicianQueue(technicians)
       .where((t) =>
@@ -132,6 +132,28 @@ Map<String, dynamic>? nextTechnicianInQueue(
     }
   }
   return free.first;
+}
+
+/// Queue as shown to Admin: available technicians on top, busy ones next,
+/// off-duty ones last. Inside each group the normal queue order is kept, so
+/// a technician who was just picked (moved to the back) sits at the bottom
+/// of the available group.
+List<Map<String, dynamic>> orderTechniciansByAvailability(
+  List<Map<String, dynamic>> allRepairRequests,
+  List<Map<String, dynamic>> technicians,
+) {
+  int rank(Map<String, dynamic> t) {
+    if (!isTechnicianClockedIn(t)) return 2;
+    return isTechnicianAssignable(allRepairRequests, t) ? 0 : 1;
+  }
+
+  final queue = orderTechnicianQueue(technicians);
+  final indexed = List.generate(queue.length, (i) => MapEntry(i, queue[i]));
+  indexed.sort((a, b) {
+    final c = rank(a.value).compareTo(rank(b.value));
+    return c != 0 ? c : a.key.compareTo(b.key);
+  });
+  return indexed.map((e) => e.value).toList();
 }
 
 /// Technician queue: ordered by `queuePosition` (lowest = next in line).

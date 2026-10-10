@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../utils/colors.dart';
 import '../../utils/constants.dart';
 import '../../utils/ui_widgets.dart';
+import '../../services/firestore_service.dart';
 
 class ServiceHistoryScreen extends StatelessWidget {
   final String trackingId;
@@ -19,12 +20,8 @@ class ServiceHistoryScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('repairRequests')
-            .where('trackingId', isEqualTo: trackingId)
-            .limit(1)
-            .snapshots(),
+      body: StreamBuilder<List<DocumentSnapshot<Map<String, dynamic>>>>(
+        stream: FirestoreService().streamRequestByTrackingId(trackingId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const AppLoadingIndicator(
@@ -36,12 +33,12 @@ class ServiceHistoryScreen extends StatelessWidget {
                 message: friendlyErrorMessage(snapshot.error));
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return _buildNotFound();
           }
 
-          final data =
-              snapshot.data!.docs.first.data() as Map<String, dynamic>;
+          final data = snapshot.data!.first.data();
+          if (data == null) return _buildNotFound();
           return _buildContent(data);
         },
       ),
@@ -341,8 +338,9 @@ class ServiceHistoryScreen extends StatelessWidget {
                                         fit: BoxFit.cover,
                                         loadingBuilder:
                                             (context, child, progress) {
-                                          if (progress == null)
+                                          if (progress == null) {
                                             return child;
+                                          }
                                           return Container(
                                             height: 160,
                                             alignment: Alignment.center,

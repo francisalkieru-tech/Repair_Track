@@ -25,6 +25,10 @@ class TechnicianPendingTab extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirestoreService().streamMyJobs(technicianDocId),
       builder: (context, snapshot) {
+        // Show a clear error instead of an endless spinner / blank screen.
+        if (snapshot.hasError) {
+          return AppErrorState(message: friendlyErrorMessage(snapshot.error));
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const AppLoadingIndicator(message: 'Loading your jobs...');
         }
@@ -49,7 +53,7 @@ class TechnicianPendingTab extends StatelessWidget {
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
           itemCount: jobs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final doc = jobs[index];
             final data = doc.data() as Map<String, dynamic>;

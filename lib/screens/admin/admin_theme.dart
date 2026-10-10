@@ -165,8 +165,15 @@ class StatCard extends StatelessWidget {
 class AdminTopBar extends StatefulWidget {
   final String title;
   final VoidCallback? onAvatarTap;
+  // Opens the page for a request tapped in the notification list.
+  final void Function(String status)? onOpenRequest;
 
-  const AdminTopBar({super.key, required this.title, this.onAvatarTap});
+  const AdminTopBar({
+    super.key,
+    required this.title,
+    this.onAvatarTap,
+    this.onOpenRequest,
+  });
 
   @override
   State<AdminTopBar> createState() => _AdminTopBarState();
@@ -312,7 +319,10 @@ class _AdminTopBarState extends State<AdminTopBar> {
                   ],
                 ),
               ),
-              const NotificationBell(recipientType: 'admin'),
+              NotificationBell(
+                recipientType: 'admin',
+                onOpenRequest: widget.onOpenRequest,
+              ),
               const SizedBox(width: 4),
               InkWell(
                 onTap: widget.onAvatarTap,

@@ -31,7 +31,7 @@
     <category android:name="android.intent.category.BROWSABLE" />
     <data
         android:scheme="https"
-        android:host="repairtrack.app"
+        android:host="repair-tracker-app-e9ace.web.app"
         android:pathPrefix="/track/" />
 </intent-filter>
 

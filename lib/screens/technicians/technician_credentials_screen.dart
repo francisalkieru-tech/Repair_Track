@@ -351,7 +351,7 @@ class _CertDialogState extends State<_CertDialog> {
         issued: _issued,
         expires: _expires,
         // Changing the certificate details cancels an earlier verification.
-        verified: changed ? false : old!.verified,
+        verified: changed ? false : old.verified,
       ),
     );
   }

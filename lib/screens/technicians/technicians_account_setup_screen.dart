@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import '../../services/auth_service.dart';
 import '../../utils/colors.dart';
 import 'technicians_main_nav.dart';
@@ -45,7 +46,7 @@ class _TechnicianAccountSetupScreenState
 
     final result = await _authService.verifyInviteAndCreateAccount(
       email: _emailController.text.trim(),
-      inviteCode: _codeController.text.trim(),
+      inviteCode: _codeController.text.trim().toUpperCase(),
       password: _passwordController.text,
     );
 
@@ -139,9 +140,16 @@ class _TechnicianAccountSetupScreenState
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _codeController,
-                      keyboardType: TextInputType.number,
+                      keyboardType: TextInputType.text,
+                      textCapitalization: TextCapitalization.characters,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'[A-Za-z0-9]')),
+                      ],
                       decoration: InputDecoration(
-                        hintText: '6-digit code from your admin',
+                        hintText: 'Code from your admin (letters & numbers)',
                         prefixIcon: const Icon(Icons.key_outlined),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8)),

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/firestore_service.dart';
 import '../../utils/report_data.dart';
+import '../../utils/ui_widgets.dart';
 import '../../utils/report_pdf.dart';
 import 'admin_theme.dart';
 
@@ -31,6 +32,10 @@ class ActivityScreen extends StatelessWidget {
       child: StreamBuilder<QuerySnapshot>(
         stream: FirestoreService().streamRepairRequests(),
         builder: (context, snapshot) {
+          // Show a clear error instead of an endless spinner / blank screen.
+          if (snapshot.hasError) {
+            return AppErrorState(message: friendlyErrorMessage(snapshot.error));
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(color: Colors.black),

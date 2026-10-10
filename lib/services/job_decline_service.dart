@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/constants.dart';
 import '../utils/technician_availability.dart';
 import 'firestore_service.dart';
@@ -53,12 +54,32 @@ class JobDeclineService {
     return d.subtract(Duration(days: d.weekday - 1));
   }
 
+  /// Technician doc id of the logged-in technician (null if unknown).
+  Future<String?> currentTechnicianDocId() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    try {
+      final d = await _db.collection('technicianAuth').doc(uid).get();
+      return d.data()?['technicianDocId'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Declines this technician already made since Monday.
   Future<int> declinesThisWeek(String technicianDocId) async {
-    final snap = await _db
-        .collection('repairRequests')
-        .where('declinedByTechnicianIds', arrayContains: technicianDocId)
-        .get();
+    final QuerySnapshot<Map<String, dynamic>> snap;
+    try {
+      snap = await _db
+          .collection('repairRequests')
+          .where('declinedByTechnicianIds', arrayContains: technicianDocId)
+          .get();
+    } on FirebaseException catch (e) {
+      // Rules may not let a technician list other jobs. Don't block the
+      // decline because the weekly count can't be read.
+      if (e.code == 'permission-denied') return 0;
+      rethrow;
+    }
     final start = _weekStart();
     var count = 0;
     for (final doc in snap.docs) {
@@ -96,7 +117,11 @@ class JobDeclineService {
     final job = snap.data();
     if (job == null) throw const DeclineException('This job no longer exists.');
 
-    if (job['assignedTechnicianUid'] != technicianDocId) {
+    // Older jobs may have no uid yet; fall back to the technician's name.
+    final assignedUid = job['assignedTechnicianUid'];
+    final isMine = assignedUid == technicianDocId ||
+        (assignedUid == null && job['assignedTechnician'] == technicianName);
+    if (!isMine) {
       throw const DeclineException('This job is no longer assigned to you.');
     }
     final status = (job['status'] ?? '') as String;
@@ -149,43 +174,73 @@ class JobDeclineService {
       next = null;
     }
 
-    final nextName = next?['name'] as String?;
-    final nextId = next?['id'] as String?;
+    var nextName = next?['name'] as String?;
+    var nextId = next?['id'] as String?;
     final cleanReason = reason.trim();
     final cleanNote = note.trim();
 
-    // A reassigned job starts again at "Accepted" for the new technician;
-    // with nobody free it returns to Admin as Pending.
-    final newStatus = next != null
-        ? (AppConstants.normalizeStatus(status) == AppConstants.statusQueued
-            ? AppConstants.statusAccepted
-            : AppConstants.normalizeStatus(status))
-        : AppConstants.statusPending;
+    // Builds the update. With nobody to hand it to, the job goes back to
+    // Admin as Pending.
+    Map<String, dynamic> buildUpdate(bool reassign) {
+      // A reassigned job starts again at "Accepted" for the new technician.
+      final newStatus = reassign
+          ? (AppConstants.normalizeStatus(status) == AppConstants.statusQueued
+              ? AppConstants.statusAccepted
+              : AppConstants.normalizeStatus(status))
+          : AppConstants.statusPending;
+      final entry = <String, dynamic>{
+        'status': newStatus,
+        // Customer-facing text stays neutral; the real reason is kept in
+        // the declineReason / declineNote fields for Admin and reports.
+        'note': reassign
+            ? 'Technician reassigned'
+            : 'Waiting for a technician to be assigned',
+        'timestamp': Timestamp.now(),
+        'declinedBy': technicianName,
+        'declinedByTechnicianId': technicianDocId,
+        'declineReason': cleanReason,
+        if (cleanNote.isNotEmpty) 'declineNote': cleanNote,
+        if (reassign) 'technician': nextName,
+        if (reassign) 'reassignedFrom': technicianName,
+      };
+      return {
+        'status': newStatus,
+        'statusHistory': FieldValue.arrayUnion([entry]),
+        'declinedByTechnicianIds': FieldValue.arrayUnion([technicianDocId]),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'assignedTechnician': reassign ? nextName : FieldValue.delete(),
+        'assignedTechnicianUid': reassign ? nextId : FieldValue.delete(),
+      };
+    }
 
-    final entry = <String, dynamic>{
-      'status': newStatus,
-      // Customer-facing text stays neutral; the real reason is kept in
-      // the declineReason / declineNote fields for Admin and reports.
-      'note': next != null
-          ? 'Technician reassigned'
-          : 'Waiting for a technician to be assigned',
-      'timestamp': Timestamp.now(),
-      'declinedBy': technicianName,
-      'declinedByTechnicianId': technicianDocId,
-      'declineReason': cleanReason,
-      if (cleanNote.isNotEmpty) 'declineNote': cleanNote,
-      if (next != null) 'technician': nextName,
-      if (next != null) 'reassignedFrom': technicianName,
-    };
-
-    await ref.update({
-      'status': newStatus,
-      'statusHistory': FieldValue.arrayUnion([entry]),
-      'declinedByTechnicianIds': FieldValue.arrayUnion([technicianDocId]),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'assignedTechnician': next != null ? nextName : FieldValue.delete(),
-      'assignedTechnicianUid': next != null ? nextId : FieldValue.delete(),
-    });
+    try {
+      await ref
+          .update(buildUpdate(next != null))
+          .timeout(const Duration(seconds: 15));
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied' && next != null) {
+        // Not allowed to hand it to someone else: give it back to Admin.
+        next = null;
+        nextName = null;
+        nextId = null;
+        try {
+          await ref
+              .update(buildUpdate(false))
+              .timeout(const Duration(seconds: 15));
+        } on FirebaseException catch (e2) {
+          if (e2.code == 'permission-denied') {
+            throw const DeclineException(
+                'Not allowed to decline this job. Please contact Admin.');
+          }
+          rethrow;
+        }
+      } else if (e.code == 'permission-denied') {
+        throw const DeclineException(
+            'Not allowed to decline this job. Please contact Admin.');
+      } else {
+        rethrow;
+      }
+    }
 
     // Queue: decliner (and the new assignee) go to the back.
     try {
@@ -193,7 +248,7 @@ class JobDeclineService {
         final ordered = orderTechnicianQueue(techs);
         await _fs.moveTechniciansToQueueEnd(
           currentOrderIds: ordered.map((t) => t['id'] as String).toList(),
-          moveToEnd: [technicianDocId, if (nextId != null) nextId],
+          moveToEnd: [technicianDocId, ?nextId],
         );
       }
     } catch (_) {}

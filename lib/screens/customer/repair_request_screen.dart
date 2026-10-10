@@ -41,17 +41,24 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('customers')
-        .doc(uid)
-        .get();
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('customers')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
 
-    if (doc.exists && mounted) {
-      setState(() {
-        _nameController.text = doc['name'] ?? '';
-        _contactController.text = doc['contactNumber'] ?? '';
-        _addressController.text = doc['address'] ?? '';
-      });
+      // Use data() so a missing field gives '' instead of throwing.
+      final data = doc.data();
+      if (data != null && mounted) {
+        setState(() {
+          _nameController.text = (data['name'] as String?) ?? '';
+          _contactController.text = (data['contactNumber'] as String?) ?? '';
+          _addressController.text = (data['address'] as String?) ?? '';
+        });
+      }
+    } catch (_) {
+      // Prefill is optional; the customer can type the details manually.
     }
   }
 
@@ -366,7 +373,7 @@ class _RepairRequestScreenState extends State<RepairRequestScreen> {
                       children: [
                         _buildLabel('Appliance Type'),
                         DropdownButtonFormField<String>(
-                          value: _selectedAppliance,
+                          initialValue: _selectedAppliance,
                           isExpanded: true,
                           icon: const Icon(Icons.keyboard_arrow_down,
                               color: AppColors.textGray),

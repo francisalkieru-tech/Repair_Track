@@ -22,12 +22,8 @@ class TrackingScreen extends StatelessWidget {
         foregroundColor: AppColors.textDark,
         elevation: 0,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('repairRequests')
-            .where('trackingId', isEqualTo: trackingId)
-            .limit(1)
-            .snapshots(),
+      body: StreamBuilder<List<DocumentSnapshot<Map<String, dynamic>>>>(
+        stream: FirestoreService().streamRequestByTrackingId(trackingId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const AppLoadingIndicator(
@@ -39,12 +35,13 @@ class TrackingScreen extends StatelessWidget {
                 message: friendlyErrorMessage(snapshot.error));
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return _buildNotFound();
           }
 
-          final doc = snapshot.data!.docs.first;
-          final data = doc.data() as Map<String, dynamic>;
+          final doc = snapshot.data!.first;
+          final data = doc.data();
+          if (data == null) return _buildNotFound();
           return _buildTrackingContent(context, doc.id, data);
         },
       ),

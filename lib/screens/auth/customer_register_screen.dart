@@ -152,7 +152,9 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen> {
                             if (v == null || v.isEmpty) {
                               return 'Please enter your email';
                             }
-                            if (!v.contains('@')) {
+                            // Basic shape check: name@domain.tld, no spaces.
+                            if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$')
+                                .hasMatch(v.trim())) {
                               return 'Invalid email address';
                             }
                             return null;
@@ -169,8 +171,13 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen> {
                             if (v == null || v.isEmpty) {
                               return 'Please enter your contact number';
                             }
-                            if (v.length != 11) {
-                              return 'Contact number must be 11 digits';
+                            // Same rule as the repair request form: digits
+                            // only, 11 long, starting with 09 (PH mobile).
+                            if (!RegExp(r'^[0-9]+$').hasMatch(v)) {
+                              return 'Numbers only, e.g. 09XXXXXXXXX';
+                            }
+                            if (v.length != 11 || !v.startsWith('09')) {
+                              return 'Enter a valid number, e.g. 09XXXXXXXXX';
                             }
                             return null;
                           },
@@ -318,7 +325,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),

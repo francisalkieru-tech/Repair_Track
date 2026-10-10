@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../utils/colors.dart';
+import '../screens/tracking/tracking_screen.dart';
+import '../screens/tracking/service_history_screen.dart';
+import '../screens/technicians/technicians_job_details.dart';
 
 
 class NotificationBell extends StatelessWidget {
@@ -9,11 +12,16 @@ class NotificationBell extends StatelessWidget {
   final String? recipientId; 
   final Color iconColor;
 
+  // Admin only: called with the request's status so the dashboard can open
+  // the right page/tab (customer and technician open their own screens here).
+  final void Function(String status)? onOpenRequest;
+
   const NotificationBell({
     super.key,
     required this.recipientType,
     this.recipientId,
     this.iconColor = Colors.black87,
+    this.onOpenRequest,
   });
 
   @override
@@ -79,13 +87,13 @@ class NotificationBell extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return DraggableScrollableSheet(
           initialChildSize: 0.6,
           minChildSize: 0.3,
           maxChildSize: 0.9,
           expand: false,
-          builder: (context, scrollController) {
+          builder: (_, scrollController) {
             return Column(
               children: [
                 Padding(
@@ -109,9 +117,9 @@ class NotificationBell extends StatelessWidget {
                           controller: scrollController,
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           itemCount: sorted.length,
-                          separatorBuilder: (_, __) =>
+                          separatorBuilder: (_, _) =>
                               const Divider(height: 1),
-                          itemBuilder: (context, index) {
+                          itemBuilder: (_, index) {
                             final doc = sorted[index];
                             final data = doc.data();
                             final isRead = data['read'] == true;
@@ -153,6 +161,14 @@ class NotificationBell extends StatelessWidget {
                                   FirestoreService()
                                       .markNotificationRead(doc.id);
                                 }
+                                // Close the list, then open the related request.
+                                Navigator.pop(sheetContext);
+                                final trackingId =
+                                    data['trackingId'] as String?;
+                                if (trackingId != null &&
+                                    trackingId.isNotEmpty) {
+                                  _openRequest(context, trackingId);
+                                }
                               },
                             );
                           },
@@ -164,6 +180,46 @@ class NotificationBell extends StatelessWidget {
         );
       },
     );
+  }
+
+  // Finds the request by tracking ID and opens the screen for this role.
+  Future<void> _openRequest(BuildContext context, String trackingId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      final doc = await FirestoreService()
+          .getRequestByTrackingId(trackingId)
+          .timeout(const Duration(seconds: 10));
+
+      if (doc == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('This request is no longer available.')),
+        );
+        return;
+      }
+
+      final data = doc.data() ?? <String, dynamic>{};
+      final status = data['status'] as String? ?? '';
+
+      if (recipientType == 'technician') {
+        navigator.push(MaterialPageRoute(
+          builder: (_) => TechnicianJobDetailScreen(docId: doc.id, data: data),
+        ));
+      } else if (recipientType == 'customer') {
+        // Completed repairs show the service history (warranty details).
+        navigator.push(MaterialPageRoute(
+          builder: (_) => status == 'Completed'
+              ? ServiceHistoryScreen(trackingId: trackingId)
+              : TrackingScreen(trackingId: trackingId),
+        ));
+      } else {
+        onOpenRequest?.call(status);
+      }
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not open it. Check your internet.')),
+      );
+    }
   }
 
   String _relativeTime(DateTime d) {

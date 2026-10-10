@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/colors.dart';
+import '../../utils/ui_widgets.dart';
 import 'technicians_job_details.dart';
 import '../../utils/constants.dart';
 
@@ -30,6 +31,10 @@ class _TechnicianScheduleTabContentState
     return StreamBuilder<QuerySnapshot>(
       stream: FirestoreService().streamMyJobs(widget.technicianDocId),
       builder: (context, snapshot) {
+        // Show a clear error instead of an endless spinner / blank screen.
+        if (snapshot.hasError) {
+          return AppErrorState(message: friendlyErrorMessage(snapshot.error));
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -77,7 +82,7 @@ class _TechnicianScheduleTabContentState
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),
                       itemCount: selectedDayJobs.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final doc = selectedDayJobs[index];
                         final data = doc.data() as Map<String, dynamic>;

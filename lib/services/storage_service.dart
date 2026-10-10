@@ -23,6 +23,11 @@ class StorageService {
         'Content-Type': 'image/jpeg',
       },
       body: bytes,
+    ).timeout(
+      // Don't let a slow/paused Supabase hang the form forever.
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception(
+          'Natagalan ang pag-upload ng photo. Check your internet and try again.'),
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {

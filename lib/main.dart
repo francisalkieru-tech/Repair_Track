@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:app_links/app_links.dart';
 import 'firebase_options.dart';
 import 'screens/auth/auth_gate.dart';
 import 'screens/tracking/tracking_screen.dart';
 import 'screens/tracking/service_history_screen.dart';
+import 'services/firestore_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,18 +63,14 @@ class _MyAppState extends State<MyApp> {
     if (trackingId == null || trackingId.isEmpty) return;
 
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('repairRequests')
-          .where('trackingId', isEqualTo: trackingId)
-          .limit(1)
-          .get();
+      final doc = await FirestoreService().getRequestByTrackingId(trackingId);
 
-      if (snapshot.docs.isEmpty) {
+      if (doc == null) {
         _pushScreen(TrackingScreen(trackingId: trackingId));
         return;
       }
 
-      final data = snapshot.docs.first.data();
+      final data = doc.data() ?? <String, dynamic>{};
       final status = data['status'] as String? ?? '';
 
       if (status == 'Completed') {

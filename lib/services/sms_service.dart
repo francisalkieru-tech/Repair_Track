@@ -1,7 +1,16 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import '../utils/constants.dart';
+
+// Tracking links in SMS use https so phones make them tappable (a custom
+// repairtrack:// link shows as plain text in most SMS apps). With Android App
+// Links set up (see hosting/README.md) tapping it opens the app directly; if
+// the app is not installed it opens a small fallback page instead.
+// To use your own domain later, change only this constant.
+const String _kTrackBaseUrl = 'https://repair-tracker-app-e9ace.web.app/track';
+String _trackLink(String trackingId) => '$_kTrackBaseUrl/$trackingId';
 
 class SmsService {
   // SMS goes through a small Cloudflare Worker that holds the PhilSMS token
@@ -34,18 +43,21 @@ class SmsService {
   }) async {
     final number = _normalizePh(to);
     if (number.isEmpty) {
-      print('[SMS SKIPPED] $label: no phone number');
+      debugPrint('[SMS SKIPPED] $label: no phone number');
       return false;
     }
     if (!_isConfigured) {
-      print('[SMS SIMULATED] $label\nTO: $number\nMESSAGE: $message');
+      debugPrint('[SMS SIMULATED] $label\nTO: $number\nMESSAGE: $message');
       return false;
     }
     try {
       // The Worker only accepts logged-in users, so send the Firebase token.
-      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      // Timeout so a bad network can't hang here before the HTTP call.
+      final idToken = await FirebaseAuth.instance.currentUser
+          ?.getIdToken()
+          .timeout(const Duration(seconds: 8));
       if (idToken == null) {
-        print('[SMS SKIPPED] $label: not logged in');
+        debugPrint('[SMS SKIPPED] $label: not logged in');
         return false;
       }
       final res = await http
@@ -65,11 +77,11 @@ class SmsService {
       final ok = res.statusCode >= 200 &&
           res.statusCode < 300 &&
           !text.contains('"status":"error"');
-      print('[SMS ${ok ? 'SENT' : 'FAILED ${res.statusCode}'}] $label '
+      debugPrint('[SMS ${ok ? 'SENT' : 'FAILED ${res.statusCode}'}] $label '
           'TO: $number ${ok ? '' : text}');
       return ok;
     } catch (e) {
-      print('[SMS ERROR] $label: $e');
+      debugPrint('[SMS ERROR] $label: $e');
       return false;
     }
   }
@@ -77,15 +89,16 @@ class SmsService {
   // Sent to the CUSTOMER right after they submit a new repair request,
   // with their tracking ID.
   Future<void> sendRequestReceivedSms({
+    required String shopName,
     required String contactNumber,
     required String trackingId,
     required String applianceType,
   }) async {
     await _send(
       to: contactNumber,
-      message: 'Hello! We have received your repair request for your '
+      message: 'Hello $shopName! We have received your repair request for your '
           '$applianceType. Your tracking ID is $trackingId. '
-          'You can track it here: repairtrack://track/$trackingId',
+          'You can track it here: ${_trackLink(trackingId)}',
       label: 'Request Received (to customer)',
     );
   }
@@ -170,7 +183,7 @@ class SmsService {
       // No phone number on file for this technician (e.g. added via
       // the quick "Add New Technician" dialog, which doesn't collect
       // one) — nothing to send to, so skip rather than fail.
-      print('[SMS SKIPPED] Job Assigned: no phone number on file '
+      debugPrint('[SMS SKIPPED] Job Assigned: no phone number on file '
           'for $technicianName');
       return;
     }
@@ -207,7 +220,7 @@ class SmsService {
           '${partDetails.trim()}. Please open the app within 24 hours and '
           'choose who will supply the part: the shop or you. If we do not '
           'hear from you, the shop will supply it. '
-          'Track: repairtrack://track/$trackingId',
+          'Track: ${_trackLink(trackingId)}',
       label: 'Parts Decision Request (to customer)',
     );
   }
@@ -334,7 +347,7 @@ class SmsService {
       buffer.write(' Note: $cleanNote.');
     }
 
-    buffer.write(' Track: repairtrack://track/$trackingId');
+    buffer.write(' Track: ${_trackLink(trackingId)}');
     return buffer.toString();
   }
 

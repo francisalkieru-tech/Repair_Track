@@ -33,7 +33,7 @@ class _TechnicianMainNavState extends State<TechnicianMainNav> {
         .collection('technicianAuth')
         .doc(uid)
         .get();
-    return (doc.data() as Map<String, dynamic>?)?['technicianDocId'];
+    return doc.data()?['technicianDocId'];
   }
 
   void _ensurePresenceHeartbeat(String technicianDocId) {

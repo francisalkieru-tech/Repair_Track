@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
+import '../../utils/ui_widgets.dart';
 import '../../utils/technician_availability.dart';
 import 'admin_theme.dart';
 import '../../widget/technician_resume_screen.dart';
@@ -53,12 +54,17 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                 return StreamBuilder<QuerySnapshot>(
                   stream: _firestoreService.streamTechnicians(),
                   builder: (context, techSnap) {
+                    // Show a clear error instead of an endless spinner / blank screen.
+                    if (techSnap.hasError) {
+                      return AppErrorState(message: friendlyErrorMessage(techSnap.error));
+                    }
                     if (techSnap.connectionState ==
                         ConnectionState.waiting) {
                       return const Center(
                           child: CircularProgressIndicator());
                     }
-                    final techs = techSnap.data?.docs ?? [];
+                    final techDocs = techSnap.data?.docs ?? [];
+                    final techs = techDocs;
                     if (techs.isEmpty) {
                       return const Center(
                         child: Text(
@@ -69,6 +75,16 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                         ),
                       );
                     }
+
+                    // Available first, busy next, off duty last.
+                    final ranked = orderTechniciansByAvailability(
+                      allData,
+                      techDocs.map((d) {
+                        final m = Map<String, dynamic>.from(d.data() as Map);
+                        m['id'] = d.id;
+                        return m;
+                      }).toList(),
+                    );
 
                     return LayoutBuilder(
                       builder: (context, constraints) {
@@ -90,10 +106,10 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                                   crossAxisSpacing: 12,
                                   childAspectRatio: 1.9,
                                 ),
-                          itemCount: techs.length,
+                          itemCount: ranked.length,
                           itemBuilder: (context, index) {
-                            final doc = techs[index];
-                            final data = doc.data() as Map<String, dynamic>;
+                            final data = ranked[index];
+                            final docId = data['id'] as String;
 
                             final assignedJobs = activeJobsForTechnician(
                               allData,
@@ -101,7 +117,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                             );
 
                             return _TechnicianCard(
-                              docId: doc.id,
+                              docId: docId,
                               data: data,
                               activeJobCount: assignedJobs.length,
                               activeJobs: assignedJobs,
@@ -143,7 +159,6 @@ class _TechnicianCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = data['name'] ?? '';
     final phone = data['phoneNumber'] ?? '';
-    final specialization = data['specialization'] ?? '';
 
     return Material(
       color: const Color(0xFFD9D9D9),
@@ -282,7 +297,6 @@ void _showTechnicianDetails(BuildContext context, String docId,
   final name = data['name'] ?? '';
   final phone = data['phoneNumber'] ?? '';
   final email = data['email'] ?? '';
-  final specialization = data['specialization'] ?? '';
   final notes = data['notes'] ?? '';
 
   showDialog(

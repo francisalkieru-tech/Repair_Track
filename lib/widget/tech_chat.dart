@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
@@ -328,7 +329,7 @@ class _TechnicianPickerList extends StatelessWidget {
             return ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 4),
               itemCount: docs.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final techId = docs[index].id;
                 final data = docs[index].data() as Map<String, dynamic>;
@@ -437,7 +438,6 @@ class _ChatThread extends StatefulWidget {
 class _ChatThreadState extends State<_ChatThread> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  bool _isSending = false;
 
   @override
   void dispose() {
@@ -446,30 +446,34 @@ class _ChatThreadState extends State<_ChatThread> {
     super.dispose();
   }
 
+  // Send right away: clear the box first, don't wait for the server.
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-
-    setState(() => _isSending = true);
+    _controller.clear();
     try {
-      await FirestoreService().sendChatMessage(
-        technicianDocId: widget.technicianDocId,
-        author: widget.currentAuthor,
-        authorName: widget.currentAuthorName,
-        text: text,
-      );
-      _controller.clear();
+      // The message shows instantly from the local cache; the server
+      // confirms in the background.
+      await FirestoreService()
+          .sendChatMessage(
+            technicianDocId: widget.technicianDocId,
+            author: widget.currentAuthor,
+            authorName: widget.currentAuthorName,
+            text: text,
+          )
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      // Still queued by Firestore; it sends once the connection is back.
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSending = false);
+      if (!mounted) return;
+      // Put the text back so nothing is lost.
+      if (_controller.text.isEmpty) _controller.text = text;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -609,22 +613,13 @@ class _ChatThreadState extends State<_ChatThread> {
                 ),
               ),
               const SizedBox(width: 6),
-              _isSending
-                  ? const SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: Padding(
-                        padding: EdgeInsets.all(6),
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.send, size: 20),
-                      color: AppColors.dark,
-                      onPressed: _send,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
+              IconButton(
+                icon: const Icon(Icons.send, size: 20),
+                color: AppColors.dark,
+                onPressed: _send,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
             ],
           ),
         ),

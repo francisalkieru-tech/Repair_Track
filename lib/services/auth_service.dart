@@ -180,16 +180,36 @@ class AuthService {
 
       final technicianDocId = pointerData['technicianDocId'] as String;
 
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
+      // Create the Auth account. If an earlier attempt already created it
+      // but failed before linking (bad connection, app closed), sign in with
+      // the same credentials and finish the setup instead of getting stuck.
+      UserCredential result;
+      try {
+        result = await _auth.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+      } on FirebaseAuthException catch (e) {
+        if (e.code != 'email-already-in-use') rethrow;
+        result = await _auth.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+      }
       final newAuthUid = result.user!.uid;
 
-      // Link this new account to the permanent technician doc.
-      await _db.collection('technicianAuth').doc(newAuthUid).set({
-        'technicianDocId': technicianDocId,
-      });
+      // Link this account to the permanent technician doc. Skipped if an
+      // earlier attempt already linked it (rules only allow one create).
+      final linkRef = _db.collection('technicianAuth').doc(newAuthUid);
+      final linkSnap = await linkRef.get();
+      if (!linkSnap.exists) {
+        await linkRef.set({'technicianDocId': technicianDocId});
+      } else if (linkSnap.data()?['technicianDocId'] != technicianDocId) {
+        return {
+          'success': false,
+          'error': 'This account is already linked to a different technician.',
+        };
+      }
 
       // Now permitted to read/update the technician doc (rules check
       // the technicianAuth link we just created).
@@ -203,34 +223,37 @@ class AuthService {
           'error': 'Technician record not found. Ask your admin to check.',
         };
       }
-      if (techData['accountSetupComplete'] == true) {
-        return {
-          'success': false,
-          'error': 'This account is already set up. Please log in instead.',
-        };
+      if (techData['accountSetupComplete'] != true) {
+        await techRef.update({'accountSetupComplete': true});
       }
 
-      await techRef.update({'accountSetupComplete': true});
-      await pointerRef.delete();
+      // Cleanup and backfill are best-effort: the account is already set up
+      // at this point, so a failure here must not show the technician an
+      // error (the rules may also deny the backfill update).
+      try {
+        await pointerRef.delete();
+      } catch (_) {}
 
       // Backfill: any jobs Admin assigned to this technician (by
       // name) before setup won't have assignedTechnicianUid set yet
       // — fix those now so streamMyJobs() picks them up immediately.
-      final techName = techData['name'] as String?;
-      if (techName != null) {
-        final priorJobs = await _db
-            .collection('repairRequests')
-            .where('assignedTechnician', isEqualTo: techName)
-            .get();
-        final backfillBatch = _db.batch();
-        for (final job in priorJobs.docs) {
-          if (job.data()['assignedTechnicianUid'] == null) {
-            backfillBatch.update(
-                job.reference, {'assignedTechnicianUid': technicianDocId});
+      try {
+        final techName = techData['name'] as String?;
+        if (techName != null) {
+          final priorJobs = await _db
+              .collection('repairRequests')
+              .where('assignedTechnician', isEqualTo: techName)
+              .get();
+          final backfillBatch = _db.batch();
+          for (final job in priorJobs.docs) {
+            if (job.data()['assignedTechnicianUid'] == null) {
+              backfillBatch.update(
+                  job.reference, {'assignedTechnicianUid': technicianDocId});
+            }
           }
+          await backfillBatch.commit();
         }
-        await backfillBatch.commit();
-      }
+      } catch (_) {}
 
       return {'success': true};
     } catch (e) {

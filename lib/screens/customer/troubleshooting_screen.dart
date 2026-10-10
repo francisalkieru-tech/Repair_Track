@@ -1,15 +1,24 @@
+import 'dart:async';
+import 'dart:math' show Random;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 //import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
 import '../../utils/troubleshooting_data.dart';
 import '../../utils/colors.dart';
 import '../../utils/ui_widgets.dart';
 import 'main_nav_screen.dart';
 import '../../services/sms_service.dart';
+
+
+String _newTrackingId() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  final rng = Random.secure();
+  return List.generate(8, (_) => alphabet[rng.nextInt(alphabet.length)])
+      .join();
+}
 
 class TroubleshootingScreen extends StatefulWidget {
   final Map<String, dynamic> repairData;
@@ -107,11 +116,13 @@ class _TroubleshootingScreenState extends State<TroubleshootingScreen> {
 
   // Writes the repair request to Firestore and generates its tracking ID.
   Future<void> _submitRequest() async {
+    // Guard against double taps / duplicate requests while still submitting.
+    if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
 
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final trackingId = const Uuid().v4().substring(0, 8).toUpperCase();
+      final trackingId = _newTrackingId();
       final db = FirebaseFirestore.instance;
 
       final docData = <String, dynamic>{
@@ -137,43 +148,55 @@ class _TroubleshootingScreenState extends State<TroubleshootingScreen> {
       if (widget.repairData['photoUrl'] != null) {
         docData['initialPhotoUrl'] = widget.repairData['photoUrl'];
       }
-      await db.collection('repairRequests').add(docData);
-
-      // TEMPORARY — for emulator testing only
-// ignore: avoid_print
-print('=============================');
-// ignore: avoid_print
-print('TRACKING ID: $trackingId');
-// ignore: avoid_print
-print('DEEP LINK: repairtrack://track/$trackingId');
-// ignore: avoid_print
-print('=============================');
-
-      // Best-effort SMS with the tracking ID. Never blocks submission.
+      // Fixed doc ref + set(): add() waits for the server ack, which can hang
+      // on a slow network even though the write already reached Firestore
+      // (admin sees it, customer stays stuck). We wait max 10s; if the server
+      // has not confirmed by then, the SDK keeps the write queued locally and
+      // syncs it later, and we tell the customer that instead of claiming
+      // it was received.
+      final docRef = db.collection('repairRequests').doc(trackingId);
+      final writeFuture = docRef.set(docData);
+      var confirmed = true;
       try {
+        await writeFuture.timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        confirmed = false;
+      }
+
+      // Best-effort "request received" SMS with the tracking ID. It is only
+      // sent once the server has confirmed the write, so a customer never
+      // gets a tracking ID by SMS for a request that was rejected. Not
+      // awaited so a slow SMS worker can never keep the customer on the
+      // loading screen.
+      Future<void> sendReceivedSms() async {
+        // sendRequestReceivedSms now requires the shop name. Read it from the
+        // shop settings; if that fails, fall back so the SMS still goes out.
+        var shopName = 'RepairTrack';
+        try {
+          final shopDoc = await db
+              .collection('shopSettings')
+              .doc('config')
+              .get()
+              .timeout(const Duration(seconds: 5));
+          final name = (shopDoc.data()?['shopName'] as String?)?.trim();
+          if (name != null && name.isNotEmpty) shopName = name;
+        } catch (_) {}
         await SmsService().sendRequestReceivedSms(
+          shopName: shopName,
           contactNumber:
               (widget.repairData['contactNumber'] as String?) ?? '',
           trackingId: trackingId,
           applianceType:
               (widget.repairData['applianceType'] as String?) ?? 'appliance',
         );
-      } catch (_) {}
-
-      // Send SMS via Semaphore
-      //final contact = widget.repairData['contactNumber'];
-      //final message =
-        //  'Your repair request has been received! Tracking ID: $trackingId. Track your repair status here: https://repairtrack.app/track/$trackingId';
-
-      //await http.post(
-        //Uri.parse('https://api.semaphore.co/api/v4/messages'),
-        //body: {
-          //'apikey': 'YOUR_SEMAPHORE_API_KEY', // ← replace with actual API key
-          //'number': contact,
-          //'message': message,
-          //'sendername': 'REPAIRAPP',
-        //},
-      //);
+      }
+      if (confirmed) {
+        unawaited(sendReceivedSms().catchError((_) {}));
+      } else {
+        // Slow network: send the SMS only after the queued write syncs.
+        unawaited(
+            writeFuture.then((_) => sendReceivedSms()).catchError((_) {}));
+      }
 
       if (!mounted) return;
       setState(() {
@@ -181,6 +204,19 @@ print('=============================');
         _isSubmitted = true;
         _trackingId = trackingId;
       });
+
+      if (!confirmed) {
+        // Be honest: the server has not confirmed the request yet.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Slow connection: your request is saved on this '
+                'phone and will be sent automatically once you are online. '
+                'Please do not submit it again.'),
+            backgroundColor: AppColors.pending,
+            duration: Duration(seconds: 8),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSubmitting = false);

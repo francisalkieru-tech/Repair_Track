@@ -440,7 +440,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                               // Email
                               const Text('Email Address',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       fontSize: AppColors.fontLabel,
                                       fontWeight: FontWeight.w500)),
                               const SizedBox(height: 8),
@@ -606,7 +606,7 @@ class _RoleCard extends StatelessWidget {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(selected ? 0.15 : 0.04),
+                  color: Colors.black.withValues(alpha: selected ? 0.15 : 0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 3),
                 ),

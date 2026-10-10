@@ -49,14 +49,20 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
     try {
       final db = FirebaseFirestore.instance;
 
-      final adminDoc = await db.collection('admins').doc(user.uid).get();
+      // Run both role lookups at the same time (was one after the other),
+      // with a timeout so the spinner can't hang forever on bad internet.
+      final results = await Future.wait([
+        db.collection('admins').doc(user.uid).get(),
+        db.collection('technicianAuth').doc(user.uid).get(),
+      ]).timeout(const Duration(seconds: 15));
+      final adminDoc = results[0];
+      final techAuthDoc = results[1];
+
       if (adminDoc.exists) {
         _goTo(const AdminDashboardScreen());
         return;
       }
 
-      final techAuthDoc =
-          await db.collection('technicianAuth').doc(user.uid).get();
       if (techAuthDoc.exists) {
         final data = techAuthDoc.data() as Map<String, dynamic>;
         _goTo(TechnicianMainNav(

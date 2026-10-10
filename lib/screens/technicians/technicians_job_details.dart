@@ -197,13 +197,17 @@ class _TechnicianJobDetailScreenState
 
   /// Technician gives the job back (only before the repair is started).
   Future<void> _declineJob() async {
-    final techId = widget.data['assignedTechnicianUid'] as String? ?? '';
     final techName = widget.data['assignedTechnician'] as String? ?? '';
     final service = JobDeclineService();
 
     setState(() => _isSubmitting = true);
     int left;
+    String techId;
     try {
+      // The logged-in technician's own id is the most reliable source.
+      techId = await service.currentTechnicianDocId() ??
+          widget.data['assignedTechnicianUid'] as String? ??
+          '';
       left = await service.declinesLeftThisWeek(techId);
     } catch (e) {
       if (mounted) {

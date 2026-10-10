@@ -2,8 +2,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -514,7 +512,7 @@ void _showCenteredDialog(BuildContext context, Widget child) {
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Dismiss',
-    barrierColor: Colors.black.withOpacity(0.35),
+    barrierColor: Colors.black.withValues(alpha: 0.35),
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (context, animation, secondaryAnimation) {
       return Center(
@@ -1199,6 +1197,8 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
       lastDate: DateTime.now().add(const Duration(days: 90)),
     );
     if (date == null) return;
+    // Don't use context after the async gap if the sheet was closed.
+    if (!mounted) return;
 
     final time = await showTimePicker(
       context: context,
@@ -1446,7 +1446,7 @@ class _UpdateStatusSheetState extends State<_UpdateStatusSheet> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 30,
               offset: const Offset(0, 12),
             ),
@@ -2202,7 +2202,7 @@ class _ReviewRequestSheetState extends State<_ReviewRequestSheet> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 30,
               offset: const Offset(0, 12),
             ),

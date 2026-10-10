@@ -176,7 +176,7 @@ class MyRepairScreen extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: sortedDocs.length,
-                      separatorBuilder: (_, __) =>
+                      separatorBuilder: (_, _) =>
                           const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final doc = sortedDocs[index];

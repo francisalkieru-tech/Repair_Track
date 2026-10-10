@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/constants.dart';
 
 class FirestoreService {
@@ -53,6 +54,61 @@ class FirestoreService {
         .collection('repairRequests')
         .orderBy('createdAt', descending: true)
         .snapshots();
+  }
+
+  // ---- Lookup by tracking ID ------------------------------------------
+  // New requests use the tracking ID as their document ID, so this is a
+  // direct document get, which the rules allow without logging in (guest
+  // tracking). Older requests have a random document ID; for those we fall
+  // back to a query, which the rules only allow for the owner / staff.
+  Future<DocumentSnapshot<Map<String, dynamic>>?> getRequestByTrackingId(
+      String trackingId) async {
+    final id = trackingId.trim().toUpperCase();
+    if (id.isEmpty) return null;
+    final direct = await _db.collection('repairRequests').doc(id).get();
+    if (direct.exists) return direct;
+    if (FirebaseAuth.instance.currentUser == null) return null;
+    try {
+      final legacy = await _db
+          .collection('repairRequests')
+          .where('trackingId', isEqualTo: id)
+          .limit(1)
+          .get();
+      return legacy.docs.isEmpty ? null : legacy.docs.first;
+    } catch (_) {
+      return null; // not allowed to list: treat as not found
+    }
+  }
+
+  // Live version of the lookup above: emits a list with 0 or 1 documents.
+  Stream<List<DocumentSnapshot<Map<String, dynamic>>>>
+      streamRequestByTrackingId(String trackingId) async* {
+    final id = trackingId.trim().toUpperCase();
+    if (id.isEmpty) {
+      yield [];
+      return;
+    }
+    final ref = _db.collection('repairRequests').doc(id);
+    final first = await ref.get();
+    if (first.exists) {
+      yield* ref
+          .snapshots()
+          .map<List<DocumentSnapshot<Map<String, dynamic>>>>(
+              (s) => s.exists ? [s] : []);
+      return;
+    }
+    if (FirebaseAuth.instance.currentUser != null) {
+      // Older request with a random document ID (owner / staff only).
+      yield* _db
+          .collection('repairRequests')
+          .where('trackingId', isEqualTo: id)
+          .limit(1)
+          .snapshots()
+          .map<List<DocumentSnapshot<Map<String, dynamic>>>>((q) => q.docs)
+          .handleError((_) {});
+      return;
+    }
+    yield [];
   }
 
   Future<void> updateRepairStatus({
@@ -133,7 +189,15 @@ class FirestoreService {
       }
     }
 
-    await _db.collection('repairRequests').doc(docId).update(updateData);
+    // Without a timeout this Future never completes while the phone is
+    // offline (Firestore queues the write), leaving the screen on a
+    // spinner forever. Callers catch the TimeoutException and re-enable
+    // their buttons; the queued write still syncs once the phone is online.
+    await _db
+        .collection('repairRequests')
+        .doc(docId)
+        .update(updateData)
+        .timeout(const Duration(seconds: 15));
   }
 
   Stream<QuerySnapshot> streamTechnicians() {

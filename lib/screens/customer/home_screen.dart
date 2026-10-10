@@ -88,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.12),
+                        color: Colors.white.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                         border: Border.all(
                             color: Colors.white54, width: 1.5),
@@ -282,7 +282,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       builder: (context) {
         return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+          // Softer backdrop blur for the Need Help sheet (was sigma 4, too heavy).
+          filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
           child: SafeArea(
             child: Padding(
               padding:
@@ -514,7 +515,7 @@ class _MenuCard extends StatelessWidget {
                 : Border.all(color: const Color(0xFFE5E7EB)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(isPrimary ? 0.12 : 0.04),
+                color: Colors.black.withValues(alpha: isPrimary ? 0.12 : 0.04),
                 blurRadius: isPrimary ? 14 : 10,
                 offset: const Offset(0, 3),
               ),
@@ -527,7 +528,7 @@ class _MenuCard extends StatelessWidget {
                 height: isPrimary ? 52 : 44,
                 decoration: BoxDecoration(
                   color: isPrimary
-                      ? Colors.white.withOpacity(0.12)
+                      ? Colors.white.withValues(alpha: 0.12)
                       : const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(12),
                 ),

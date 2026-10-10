@@ -27,6 +27,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _requestsTab = tab;
       });
 
+  // From a notification: open the page/tab that holds a request by its status.
+  void _openRequestByStatus(String status) {
+    switch (status) {
+      case 'Pending':
+        _goTo(1, tab: 0);
+      case 'Accepted':
+        _goTo(1, tab: 1);
+      case 'Completed':
+        _goTo(2);
+      case 'Declined':
+        _goTo(5);
+      default:
+        _goTo(1, tab: 2); // In Process, Waiting for Parts, Pending Review...
+    }
+  }
+
   static const _sections = [
     _NavItem('Dashboard', Icons.dashboard_rounded),
     _NavItem('Repair Request', Icons.assignment_rounded),
@@ -145,6 +161,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               title: _allSections[_selectedIndex].label,
                               onAvatarTap: () => setState(
                                   () => _selectedIndex = _settingsIndex),
+                              onOpenRequest: _openRequestByStatus,
                             ),
                             Expanded(child: _pages[_selectedIndex]),
                           ],
@@ -158,6 +175,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         title: _allSections[_selectedIndex].label,
                         onAvatarTap: () =>
                             setState(() => _selectedIndex = _settingsIndex),
+                        onOpenRequest: _openRequestByStatus,
                       ),
                       Expanded(child: _pages[_selectedIndex]),
                     ],

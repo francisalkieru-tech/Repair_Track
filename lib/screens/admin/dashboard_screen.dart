@@ -3,19 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/firestore_service.dart';
 import '../../utils/constants.dart';
+import '../../utils/ui_widgets.dart';
 import '../../utils/technician_availability.dart';
 import 'admin_theme.dart';
 
-// Admin dashboard — kept minimal on purpose (panel feedback: not crowded).
-//   Row 1: Active Jobs | Technicians (active today / registered) | Completed Tasks
-//   Row 2: Today's Schedule (Tech Visits) — large
-//   Row 3: Technicians (who is on duty, repairing, available)
-//
-// Active Jobs = the repairs in the "In Process" tab; clicking the card opens
-// that tab. The card only mentions how many are Accepted / new.
-// "Active" technician = clocked in today (Clock In on the technician app).
-// Tapping Completed Tasks opens a list of the finished repairs for today /
-// this week / this month.
 class DashboardScreen extends StatelessWidget {
   final ValueChanged<int>? onNavigate;
 
@@ -35,6 +26,10 @@ class DashboardScreen extends StatelessWidget {
         child: StreamBuilder<QuerySnapshot>(
           stream: firestoreService.streamRepairRequests(),
           builder: (context, requestSnap) {
+            // Show a clear error instead of an endless spinner / blank screen.
+            if (requestSnap.hasError) {
+              return AppErrorState(message: friendlyErrorMessage(requestSnap.error));
+            }
             if (requestSnap.connectionState == ConnectionState.waiting) {
               return const Padding(
                 padding: EdgeInsets.only(top: 100),
@@ -207,10 +202,11 @@ class _TechSummary {
       rows.add(_TechRow(name, jobs.length, repairing, clockedIn, state));
     }
 
-    // Clocked-in technicians first
+    // Available first, then busy, then off duty
+    int rank(_TechRow r) => !r.clockedIn ? 2 : (r.state == 'available' ? 0 : 1);
     rows.sort((a, b) {
-      final byDuty = (a.clockedIn ? 0 : 1).compareTo(b.clockedIn ? 0 : 1);
-      return byDuty != 0 ? byDuty : a.name.compareTo(b.name);
+      final byState = rank(a).compareTo(rank(b));
+      return byState != 0 ? byState : a.name.compareTo(b.name);
     });
 
     return _TechSummary(
@@ -353,7 +349,6 @@ class _StatCard extends StatelessWidget {
   final String? subtitle;
   final IconData icon;
   final bool iconSuccess;
-  final Widget? footer;
   final VoidCallback? onTap;
 
   const _StatCard({
@@ -362,7 +357,6 @@ class _StatCard extends StatelessWidget {
     required this.icon,
     this.subtitle,
     this.iconSuccess = false,
-    this.footer,
     this.onTap,
   });
 
@@ -431,10 +425,6 @@ class _StatCard extends StatelessWidget {
                         color: Color(0xFF666666),
                       ),
                     ),
-                  ],
-                  if (footer != null) ...[
-                    const SizedBox(height: 6),
-                    footer!,
                   ],
                 ],
               ),
@@ -612,7 +602,7 @@ void _showCompletedTasksDialog(
                               shrinkWrap: true,
                               padding: EdgeInsets.zero,
                               itemCount: items.length,
-                              separatorBuilder: (_, __) => const Divider(
+                              separatorBuilder: (_, _) => const Divider(
                                 height: 14,
                                 color: Color(0xFFEDEDED),
                               ),
@@ -730,7 +720,6 @@ void _showCompletedTasksDialog(
 class _Panel extends StatelessWidget {
   final String title;
   final String? subtitle;
-  final Widget? trailing;
   final Widget child;
   final double height;
 
@@ -738,7 +727,6 @@ class _Panel extends StatelessWidget {
     required this.title,
     required this.child,
     this.subtitle,
-    this.trailing,
     this.height = 290,
   });
 
@@ -793,7 +781,6 @@ class _Panel extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 10),
